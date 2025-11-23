@@ -1,0 +1,28 @@
+{
+  "name": "event-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "scrape.eventbrite.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaoTNguyen/event-scraper.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/BaoTNguyen/event-scraper/issues"
+  },
+  "homepage": "https://github.com/BaoTNguyen/event-scraper#readme",
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "csv-writer": "^1.6.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "playwright": "^1.56.1",
+    "puppeteer": "^24.31.0"
+  }
+}
