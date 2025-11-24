@@ -7,3 +7,19 @@ editor: visual
 ---
 
 ## Event Scraper
+
+```{r}
+
+
+city <- "edmonton"
+category <- "business"
+
+
+# Run Node scraper
+system("node scrape.eventbrite.js", intern = TRUE)
+
+
+library(readr)
+events <- read_csv("events.csv")
+
+```
