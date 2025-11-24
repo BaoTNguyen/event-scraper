@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { firefox } from "playwright";
-import * as cheerio from "cheerio";
+const { firefox } = require("playwright");
+const cheerio = require("cheerio");
 
 // Start at page 1
 const listingUrl = 'https://www.eventbrite.ca/d/canada--edmonton/business--events--next-week/?page=1';

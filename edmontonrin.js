@@ -67,7 +67,7 @@ const fs = require("fs");
     todayTime
   );
 
-  console.log("Upcoming events found:", events.length);
+  // console.log("Upcoming events found:", events.length);
 
   // --------------------------------------------------
   // V2: Visit each event page to get full description
@@ -101,7 +101,7 @@ const fs = require("fs");
 
   // Save everything
   fs.writeFileSync("events-clean.json", JSON.stringify(events, null, 2));
-  console.log("Saved: events-clean.json");
+  // console.log("Saved: events-clean.json");
 
   await browser.close();
 })();

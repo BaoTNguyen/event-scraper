@@ -124,7 +124,24 @@ Project structure:
 
 Notes: once workflow is successful, subsequent report will be made for a specific workflow run (Ex. Run on Dec 1, 2025 for 1 week-1 month ahead of data, then do analysis based on this)
 
-## Run Platform Calgary scraper (Node)
+## Table Format
 
-```{r} node_bin <- Sys.which("node") if (node_bin == "") {   stop("Node is not available on this system; install it to run the scraper.") }  script_path <- file.path("platformcalgary.js") cmd <- sprintf('"%s" "%s"', node_bin, script_path) scrape_raw <- system(cmd, intern = TRUE)  # Parse JSON output from the scraper into an R data frame events_df <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n")) print(events_df)}
-```
+Want to have across all scrapers:
+
+-   platform (str): page the event came from
+
+-   title (str): event title
+
+-   event_url (str): link to the event
+
+-   date (str): the date of the event (mm/dd/yyyy)
+
+-   day_of_week (str): what day it is during the week (Monday, Tuesday, etc...)
+
+-   start_time (str): the time the event starts (ex. 11:00 am given 11:00 am - 1:00 pm)
+
+-   end_time (str): the time the event ends (ex. 1:00 pm given 11:00 am - 1:00 pm)
+
+-   location (str): the event location
+
+-   description (str): the full event description
