@@ -7,7 +7,7 @@ const fs = require("fs");
 
   const url = "https://www.edmontonrin.ca/events";
 
-  console.log(`Navigating to ${url} ...`);
+  console.error(`Navigating to ${url} ...`);
   await page.goto(url, { waitUntil: "networkidle" });
   await page.waitForTimeout(3000);
 
@@ -214,13 +214,13 @@ const fs = require("fs");
     todayTime
   );
 
-  console.log(`Found ${events.length} upcoming events on listing page.`);
+  console.error(`Found ${events.length} upcoming events on listing page.`);
 
   // --------- V2 PART: click into each event for fullDescription ----------
   for (let i = 0; i < events.length; i++) {
     const evt = events[i];
     try {
-      console.log(`[${i + 1}/${events.length}] Opening: ${evt.title}`);
+      console.error(`[${i + 1}/${events.length}] Opening: ${evt.title}`);
       await page.goto(evt.eventUrl, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(800);
 
@@ -252,7 +252,9 @@ const fs = require("fs");
   // --------- SAVE V2 OUTPUT ----------
   const outputPath = "edmontonrin-events-v2.json";
   fs.writeFileSync(outputPath, JSON.stringify(events, null, 2), "utf-8");
-  console.log(`Saved events with full descriptions to ${outputPath}`);
+  // Emit pure JSON to stdout for downstream processing
+  console.log(JSON.stringify(events, null, 2));
+  console.error(`Saved events with full descriptions to ${outputPath}`);
 
   await browser.close();
 })();

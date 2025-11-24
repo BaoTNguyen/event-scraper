@@ -39,3 +39,92 @@ Project structure:
 9.  Format and display details of the 3-5 most relevant events
 
 Notes: once workflow is successful, subsequent report will be made for a specific workflow run (Ex. Run on Dec 1, 2025 for 1 week-1 month ahead of data, then do analysis based on this)
+
+## Run Platform Calgary scraper (Node)
+
+```{r}
+# Platform Calgary scraper
+node_bin <- Sys.which("node")
+if (node_bin == "") {
+  stop("Node is not available on this system; install it to run the scraper.")
+}
+
+script_path <- file.path("platformcalgary.js")
+cmd <- sprintf('"%s" "%s"', node_bin, script_path)
+scrape_raw <- system(cmd, intern = TRUE)
+
+# Parse JSON output from the scraper into an R data frame
+pc_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
+print(pc_events)
+```
+
+```{r}
+# Eventbrite scraper
+node_bin <- Sys.which("node")
+if (node_bin == "") {
+  stop("Node is not available on this system; install it to run the scraper.")
+}
+
+script_path <- file.path("eventbrite.js")
+cmd <- sprintf('"%s" "%s"', node_bin, script_path)
+scrape_raw <- system(cmd, intern = TRUE)
+
+# Parse JSON output from the scraper into an R data frame
+eb_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
+print(eb_events)
+```
+
+```{r}
+# ERIN scraper
+node_bin <- Sys.which("node")
+if (node_bin == "") {
+  stop("Node is not available on this system; install it to run the scraper.")
+}
+
+script_path <- file.path("edmontonrin.js")
+cmd <- sprintf('"%s" "%s"', node_bin, script_path)
+scrape_raw <- system(cmd, intern = TRUE)
+
+# Parse JSON output from the scraper into an R data frame
+erin_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
+print(erin_events)
+```
+
+## Event Scraper
+
+Project structure:
+
+-   Web scraping (JavaScript): 
+
+1.  For each analyzed website, search for events using these filters
+
+2.  For each event, extract elements for event title, location, time and description as applicable
+
+3.  Have one .js file per website extracted
+
+-   NLP:
+
+1.  Define a list of locations, keywords and topics to search for (can test 2 personas/sets of characteristics to show effective workflow outputs)
+
+2.  Using web scraping outputs, filter based on above characteristics
+
+3.  Populate a table in R with extracted elements in different columns for each event
+
+4.  Tokenize event descriptions
+
+5.  Remove stop words (the, and, is, etc…) to retain relevant words and named entities
+
+6.  Extract information about event dates, locations, and relevant companies/attendees/speakers
+
+7.  Develop a metric for relevance using sentiment analysis based on a combination of word matching frequency with filters, strength of words used, and other factors
+
+8.  Assess all events using this metric
+
+9.  Format and display details of the 3-5 most relevant events
+
+Notes: once workflow is successful, subsequent report will be made for a specific workflow run (Ex. Run on Dec 1, 2025 for 1 week-1 month ahead of data, then do analysis based on this)
+
+## Run Platform Calgary scraper (Node)
+
+```{r} node_bin <- Sys.which("node") if (node_bin == "") {   stop("Node is not available on this system; install it to run the scraper.") }  script_path <- file.path("platformcalgary.js") cmd <- sprintf('"%s" "%s"', node_bin, script_path) scrape_raw <- system(cmd, intern = TRUE)  # Parse JSON output from the scraper into an R data frame events_df <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n")) print(events_df)}
+```

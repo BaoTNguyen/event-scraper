@@ -1,6 +1,7 @@
-import fs from 'fs';
-import { firefox } from "playwright";
-import * as cheerio from "cheerio";
+// Scrapes Eventbrite listings and prints JSON to stdout (logs to stderr)
+const fs = require("fs");
+const { firefox } = require("playwright");
+const cheerio = require("cheerio");
 
 const listingUrl = 'https://www.eventbrite.ca/d/canada--edmonton/business--events--next-week/?page=2';
 const jsonFile = 'events.json';
@@ -26,7 +27,7 @@ async function autoScroll(page) {
 }
 
 async function scrapeListingPage(page, url) {
-  console.log('Visiting listing page:', url);
+  console.error('Visiting listing page:', url);
   await page.goto(url, { waitUntil: 'networkidle' });
 
   // Scroll to force React to load full list
@@ -47,12 +48,12 @@ async function scrapeListingPage(page, url) {
     }
   );
 
-  console.log(`Found ${eventLinks.length} unique events`);
+  console.error(`Found ${eventLinks.length} unique events`);
   return eventLinks;
 }
 
 async function scrapeEventPage(page, url) {
-  console.log('Visiting event page:', url);
+  console.error('Visiting event page:', url);
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
 
@@ -85,9 +86,11 @@ async function scrapeEventPage(page, url) {
       eventsData.push(data);
     }
 
-    // Write JSON file
+    // Write JSON file for reference
     fs.writeFileSync(jsonFile, JSON.stringify(eventsData, null, 2));
-    console.log(`Scraped ${eventsData.length} events. Data saved to ${jsonFile}`);
+
+    // Emit pure JSON to stdout for downstream tools (e.g., R system()/fromJSON)
+    console.log(JSON.stringify(eventsData, null, 2));
 
   } catch (err) {
     console.error('Error during scraping:', err);
