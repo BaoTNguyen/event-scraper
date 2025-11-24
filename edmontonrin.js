@@ -66,14 +66,12 @@ const { chromium } = require("playwright");
 
 
   //Visit each event page and extract fullDescription
-
   for (const evt of events) {
     if (!evt.eventUrl) continue;
 
     await page.goto(evt.eventUrl, { waitUntil: "domcontentloaded" });
 
     const fullDescription = await page.evaluate(() => {
-      // Only extract description content inside Squarespace's Post Body
       const body = document.querySelector(
         ".eventitem-column-content .sqs-layout"
       );
