@@ -4,7 +4,6 @@ const cheerio = require("cheerio");
 
 // Start at page 1
 const listingUrl = 'https://www.eventbrite.ca/d/canada--edmonton/business--events--next-week/?page=1';
-const jsonFile = 'events.json';
 
 async function autoScroll(page) {
   await page.evaluate(async () => {
@@ -31,7 +30,7 @@ async function scrapeAllListingPages(page, startingUrl) {
   const allEventUrls = new Set();
 
   while (currentPageUrl) {
-    console.log('Visiting listing page:', currentPageUrl);
+    // console.log('Visiting listing page:', currentPageUrl);
     await page.goto(currentPageUrl, { waitUntil: 'networkidle' });
     await autoScroll(page);
     await page.waitForTimeout(2000);
@@ -49,7 +48,7 @@ async function scrapeAllListingPages(page, startingUrl) {
         return [...unique.values()];
       }
     );
-    console.log(`Found ${eventLinks.length} events on this page`);
+    // console.log(`Found ${eventLinks.length} events on this page`);
     eventLinks.forEach((url) => allEventUrls.add(url));
 
     // Check for "Next Page" button
@@ -67,7 +66,7 @@ async function scrapeAllListingPages(page, startingUrl) {
 }
 
 async function scrapeEventPage(page, url) {
-  console.error('Visiting event page:', url);
+  // console.error('Visiting event page:', url);
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
 
@@ -90,7 +89,7 @@ async function scrapeEventPage(page, url) {
 
   try {
     const eventUrls = await scrapeAllListingPages(page, listingUrl);
-    console.log(`Total unique events found: ${eventUrls.length}`);
+    // console.log(`Total unique events found: ${eventUrls.length}`);
 
     const eventsData = [];
     for (const url of eventUrls) {
@@ -98,13 +97,12 @@ async function scrapeEventPage(page, url) {
       eventsData.push(data);
     }
 
-    fs.writeFileSync(jsonFile, JSON.stringify(eventsData, null, 2));
 
     // Emit pure JSON to stdout for downstream tools (e.g., R system()/fromJSON)
     console.log(JSON.stringify(eventsData, null, 2));
 
   } catch (err) {
-    console.error('Error during scraping:', err);
+    // console.error('Error during scraping:', err);
   } finally {
     await browser.close();
   }

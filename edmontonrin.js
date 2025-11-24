@@ -89,9 +89,7 @@ const { chromium } = require("playwright");
     evt.fullDescription = fullDescription;
   }
 
-  // Save everything
-  fs.writeFileSync("events-clean.json", JSON.stringify(events, null, 2));
-  console.log("Saved: events-clean.json");
+  console.log(JSON.stringify(events, null, 2));
 
   await browser.close();
 })();
