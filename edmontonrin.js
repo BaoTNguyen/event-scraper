@@ -49,13 +49,14 @@ const { chromium } = require("playwright");
         const eventUrl = titleLink ? titleLink.href : null;
 
         output.push({
+          platform: "edmontonrin",
           title,
-          date: dateString,
-          startTime,
-          endTime,
+          event_url: eventUrl,
+          _rawDate: dateString,
+          start_time: startTime,
+          end_time: endTime,
           location,
-          excerpt,
-          eventUrl,
+          description: excerpt,
         });
       }
 
@@ -84,10 +85,42 @@ const { chromium } = require("playwright");
         .join("\n\n");
     });
 
-    evt.fullDescription = fullDescription;
+    if (fullDescription) {
+      evt.description = fullDescription;
+    }
   }
 
-  console.log(JSON.stringify(events, null, 2));
+  const toDateParts = (input) => {
+    if (!input) return { date: null, dayOfWeek: null };
+    const parsed = new Date(input);
+    if (Number.isNaN(parsed.getTime())) {
+      return { date: null, dayOfWeek: null };
+    }
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const year = parsed.getFullYear();
+    return {
+      date: `${month}/${day}/${year}`,
+      dayOfWeek: parsed.toLocaleString("en-US", { weekday: "long" }),
+    };
+  };
+
+  const normalized = events.map((evt) => {
+    const dateInfo = toDateParts(evt._rawDate);
+    return {
+      platform: evt.platform,
+      title: evt.title || null,
+      event_url: evt.event_url || null,
+      date: dateInfo.date,
+      day_of_week: dateInfo.dayOfWeek,
+      start_time: evt.start_time || null,
+      end_time: evt.end_time || null,
+      location: evt.location || null,
+      description: evt.description || null,
+    };
+  });
+
+  console.log(JSON.stringify(normalized, null, 2));
 
   await browser.close();
 })();

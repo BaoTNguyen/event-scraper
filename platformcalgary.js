@@ -16,7 +16,37 @@ const cheerio = require("cheerio");
   const $ = cheerio.load(await page.content());
   const events = [];
 
-  $('section#community [fs-cmsfilter-element="list"] .w-dyn-item').each((_, el) => {
+  const monthMap = {
+    Jan: "01",
+    January: "01",
+    Feb: "02",
+    February: "02",
+    Mar: "03",
+    March: "03",
+    Apr: "04",
+    April: "04",
+    May: "05",
+    Jun: "06",
+    June: "06",
+    Jul: "07",
+    July: "07",
+    Aug: "08",
+    August: "08",
+    Sep: "09",
+    Sept: "09",
+    September: "09",
+    Oct: "10",
+    October: "10",
+    Nov: "11",
+    November: "11",
+    Dec: "12",
+    December: "12",
+  };
+
+  const cardEvents = $('section#community [fs-cmsfilter-element="list"] .w-dyn-item');
+  const currentYear = new Date().getFullYear();
+
+  cardEvents.each((_, el) => {
     const card = $(el).find(".card.link.u-h-100").first();
     const linkEl = card.find("a.u-link-cover").first();
 
@@ -51,37 +81,125 @@ const cheerio = require("cheerio");
         ? $(locationCandidates[locationCandidates.length - 1]).text().trim() || null
         : null;
 
-    const guideRaw = card.find('p[fs-cmsfilter-field="guide"]').first().text().trim();
-    const guide = guideRaw === "" ? null : guideRaw;
+    let description = null;
+    const descAttr = card.find('p[fs-cmsfilter-field="description"]').first();
+    if (descAttr.length) {
+      const text = descAttr.text().trim();
+      if (text !== "") {
+        description = text;
+      }
+    }
+    if (!description) {
+      const fallback = card
+        .find("p")
+        .filter((_, p) => !$(p).attr("fs-cmsfilter-field"))
+        .first()
+        .text()
+        .trim();
+      description = fallback === "" ? null : fallback;
+    }
 
-    const descriptionRaw = card.find('p[fs-cmsfilter-field="description"]').first().text().trim();
-    const description = descriptionRaw === "" ? null : descriptionRaw;
-
-    const categories = card
-      .find('.card-body.divider-top [fs-cmsfilter-field="category"]')
-      .map((j, c) => $(c).text().trim())
-      .get();
-
-    // Skip placeholders if title and href are missing
     if (!title && !href) {
       return;
     }
 
+    let date = null;
+    if (month && day) {
+      const monthNumber = monthMap[month] || null;
+      if (monthNumber) {
+        date = `${monthNumber}/${day.padStart(2, "0")}/${currentYear}`;
+      }
+    }
+
     events.push({
-      native_id: href,
       platform: "platformcalgary",
       title,
       event_url: href,
-      date_day_of_week: dow,
-      date_day: day,
-      date_month: month,
+      date,
+      day_of_week: dow || null,
       start_time: startTime,
       end_time: endTime,
       location,
-      guide,
       description,
-      categories,
+      needsDetail: !location || !date || !description || description.length < 180,
     });
+  });
+
+  const sanitize = (text) => {
+    if (!text) return null;
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    return cleaned === "" ? null : cleaned;
+  };
+
+  const detailTargets = events.filter((evt) => evt.needsDetail && evt.event_url);
+
+  if (detailTargets.length > 0) {
+    const detailPage = await browser.newPage();
+    for (const evt of detailTargets) {
+      try {
+        await detailPage.goto(evt.event_url, { waitUntil: "domcontentloaded" });
+        await detailPage.waitForTimeout(700);
+        const detailHtml = await detailPage.content();
+        const $$ = cheerio.load(detailHtml);
+        const mainCol = $$(".col.col-lg-8.col-sm-12").first();
+
+        if (mainCol.length) {
+          const paragraphs = mainCol
+            .find("p")
+            .map((_, p) => sanitize($$(p).text()))
+            .get()
+            .filter(Boolean);
+          if (paragraphs.length && (!evt.description || evt.description.length < 180)) {
+            evt.description = paragraphs.join("\n\n");
+          }
+
+          const infoItems = mainCol.find(".card .card-body ul li");
+          const dateText = sanitize(infoItems.eq(0).text());
+          if (dateText) {
+            const parsed = new Date(dateText);
+            if (!Number.isNaN(parsed.getTime())) {
+              const month = String(parsed.getMonth() + 1).padStart(2, "0");
+              const dDay = String(parsed.getDate()).padStart(2, "0");
+              const year = parsed.getFullYear();
+              evt.date = `${month}/${dDay}/${year}`;
+              evt.day_of_week = parsed.toLocaleString("en-US", { weekday: "long" });
+            }
+          }
+
+          const timeText = sanitize(infoItems.eq(1).text());
+          if (timeText) {
+            const parts = timeText.split(/[-–—]/).map((part) => part.trim());
+            if (parts.length >= 1) {
+              evt.start_time = parts[0] || evt.start_time;
+            }
+            if (parts.length >= 2) {
+              evt.end_time = parts[1] || evt.end_time;
+            }
+          }
+
+          const locationText = sanitize(infoItems.eq(2).text());
+          if (locationText) {
+            evt.location = locationText;
+          }
+        }
+
+        if (!evt.description) {
+          const bodyText = sanitize($$("body").text());
+          if (bodyText) {
+            evt.description = bodyText;
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to fetch detail for ${evt.title || evt.event_url}:`, err.message);
+      } finally {
+        evt.needsDetail = false;
+      }
+    }
+    await detailPage.close();
+  }
+
+  events.forEach((evt) => {
+    delete evt.needsDetail;
   });
 
   console.log(JSON.stringify(events, null, 2));

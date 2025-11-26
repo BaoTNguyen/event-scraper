@@ -65,12 +65,29 @@ if (node_bin == "") {
   stop("Node is not available on this system; install it to run the scraper.")
 }
 
+# Capture stdout only (discard stderr so logs/errors don't corrupt JSON)
 script_path <- file.path("eventbrite.js")
-cmd <- sprintf('"%s" "%s"', node_bin, script_path)
-scrape_raw <- system(cmd, intern = TRUE)
+eb_out <- system2(
+  node_bin,
+  args = sprintf('"%s"', script_path),
+  stdout = TRUE,
+  stderr = FALSE,
+  wait = TRUE
+)
+
+# Convert to UTF-8, drop literal newlines, and strip remaining control characters before parsing
+eb_raw <- paste(eb_out, collapse = "\n")
+eb_utf8 <- iconv(eb_raw, to = "UTF-8", sub = " ")
+eb_utf8 <- gsub("\r", "", eb_utf8, fixed = TRUE)
+eb_utf8 <- gsub("\n", "", eb_utf8, fixed = TRUE)
+bad_codes <- c(0:8, 11, 12, 14:31, 127)
+bad_chars <- paste(vapply(bad_codes, intToUtf8, character(1)), collapse = "")
+replacement <- strrep(" ", nchar(bad_chars))
+eb_clean <- chartr(bad_chars, replacement, eb_utf8)
+
 
 # Parse JSON output from the scraper into an R data frame
-eb_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
+eb_events <- jsonlite::fromJSON(eb_clean)
 print(eb_events)
 ```
 
@@ -88,6 +105,40 @@ scrape_raw <- system(cmd, intern = TRUE)
 # Parse JSON output from the scraper into an R data frame
 erin_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
 print(erin_events)
+
+
+```
+
+```{r}
+# Combine scraper outputs
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(tibble)
+library(arrow)
+
+# Ensure we have tibbles (handles NULL if a scraper failed)
+scraper_tables <- list(
+  platformcalgary = if (exists("pc_events")) as_tibble(pc_events) else tibble(),
+  eventbrite = if (exists("eb_events")) as_tibble(eb_events) else tibble(),
+  edmontonrin = if (exists("erin_events")) as_tibble(erin_events) else tibble()
+)
+
+# Add a platform column for provenance and bind all
+combined_events <- scraper_tables %>%
+  imap(function(tbl, name) {
+    if (nrow(tbl) == 0) return(tbl)
+    tbl %>% mutate(platform = name)
+  }) %>%
+  bind_rows()
+
+print(combined_events)
+
+# Write file to feather for development/testing purposes first
+arrow::write_feather(combined_events, "combined_events.feather")
+
+test_feather <- arrow::read_feather("combined_events.feather")
 ```
 
 ## Event Scraper
