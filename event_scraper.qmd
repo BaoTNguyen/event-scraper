@@ -1,5 +1,5 @@
 ---
-title: "Event Scraper Ayman"
+title: "Event Scraper Project"
 format: 
   html:
     embed-resources: true
@@ -38,27 +38,65 @@ Project structure:
 
 9.  Format and display details of the 3-5 most relevant events
 
-Notes: once workflow is successful, subsequent report will be made for a specific workflow run (Ex. Run on Dec 1, 2025 for 1 week-1 month ahead of data, then do analysis based on this)
+Notes: once workflow is successful, subsequent report will be made in a generalizable manner so that commentary on results will always be relevant (substitute variable names into analysis as placeholders for statistics and other info retrieved)
+
+## Table Format
+
+Want to have across all scrapers:
+
+-   platform (str): page the event came from
+
+-   title (str): event title
+
+-   event_url (str): link to the event
+
+-   date (str): the date of the event (mm/dd/yyyy)
+
+-   day_of_week (str): what day it is during the week (Monday, Tuesday, etc...)
+
+-   start_time (str): the time the event starts (ex. 11:00 am given 11:00 am - 1:00 pm)
+
+-   end_time (str): the time the event ends (ex. 1:00 pm given 11:00 am - 1:00 pm)
+
+-   location (str): the event location
+
+-   description (str): the full event description
+
+
+```{r}
+# Load libraries
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(tibble)
+library(arrow)
+library(tidyverse)
+library(spacyr)
+library(textdata)
+```
 
 ## Run Platform Calgary scraper (Node)
 
 ```{r}
 # Platform Calgary scraper
-node_bin <- Sys.which("node")
-if (node_bin == "") {
-  stop("Node is not available on this system; install it to run the scraper.")
-}
-
-script_path <- file.path("platformcalgary.js")
-cmd <- sprintf('"%s" "%s"', node_bin, script_path)
-scrape_raw <- system(cmd, intern = TRUE)
-
-# Parse JSON output from the scraper into an R data frame
-pc_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
-print(pc_events)
+pc_events <- system("node ./platformcalgary.js", intern = TRUE) %>% 
+  jsonlite::fromJSON() %>%
+  dplyr::as_tibble()
 ```
 
+
 ```{r}
+# Eventbrite scraper
+eb_events <- system("node ./eventbrite.js", intern = TRUE) %>% 
+  jsonlite::fromJSON() %>%
+  dplyr::as_tibble()
+```
+
+
+
+```{r, eval=FALSE}
+# ONLY THIS BLOCK WORKS FOR BAO
 # Eventbrite scraper
 node_bin <- Sys.which("node")
 if (node_bin == "") {
@@ -87,53 +125,31 @@ eb_clean <- chartr(bad_chars, replacement, eb_utf8)
 
 
 # Parse JSON output from the scraper into an R data frame
-eb_events <- jsonlite::fromJSON(eb_clean)
+eb_events <- jsonlite::fromJSON(eb_clean) %>% 
+  dplyr::as_tibble() 
 print(eb_events)
 ```
 
+
+
 ```{r}
 # ERIN scraper
-node_bin <- Sys.which("node")
-if (node_bin == "") {
-  stop("Node is not available on this system; install it to run the scraper.")
-}
-
-script_path <- file.path("edmontonrin.js")
-cmd <- sprintf('"%s" "%s"', node_bin, script_path)
-scrape_raw <- system(cmd, intern = TRUE)
-
-# Parse JSON output from the scraper into an R data frame
-erin_events <- jsonlite::fromJSON(paste(scrape_raw, collapse = "\n"))
-print(erin_events)
-
+etest_feather <- system("node ./edmontonrin.js", intern = TRUE) %>% 
+  jsonlite::fromJSON() %>%
+  dplyr::as_tibble()
 
 ```
 
+
+
 ```{r}
-# Combine scraper outputs
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(stringr)
-library(tibble)
-library(arrow)
+# Make a list of tibbles
+scraper_tables <- list(pc_events, eb_events, etest_feather)
 
-# Ensure we have tibbles (handles NULL if a scraper failed)
-scraper_tables <- list(
-  platformcalgary = if (exists("pc_events")) as_tibble(pc_events) else tibble(),
-  eventbrite = if (exists("eb_events")) as_tibble(eb_events) else tibble(),
-  edmontonrin = if (exists("erin_events")) as_tibble(erin_events) else tibble()
-)
-
-# Add a platform column for provenance and bind all
-combined_events <- scraper_tables %>%
-  imap(function(tbl, name) {
-    if (nrow(tbl) == 0) return(tbl)
-    tbl %>% mutate(platform = name)
-  }) %>%
-  bind_rows()
-
-print(combined_events)
+# Create a combined tibble from the list
+combined_events <- dplyr::bind_rows(scraper_tables) %>% 
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
 
 # Write file to feather for development/testing purposes first
 arrow::write_feather(combined_events, "combined_events.feather")
@@ -141,58 +157,217 @@ arrow::write_feather(combined_events, "combined_events.feather")
 test_feather <- arrow::read_feather("combined_events.feather")
 ```
 
-## Event Scraper
 
-Project structure:
 
--   Web scraping (JavaScript): 
+```{r}
+# Tokenize unigrams and remove stopwords (replace test_feather with actual run)
+events_tokens <- test_feather %>%
+  select(event_id, description) %>%
+  filter(!is.na(description)) %>%
+  unnest_tokens(output = word, input = description) %>%
+  anti_join(stop_words)
 
-1.  For each analyzed website, search for events using these filters
+events_tokens
 
-2.  For each event, extract elements for event title, location, time and description as applicable
+```
 
-3.  Have one .js file per website extracted
 
--   NLP:
+```{r}
+title_tokens <- test_feather %>%
+  select(event_id, title) %>%
+  filter(!is.na(title)) %>%
+  unnest_tokens(output = word, input = title) %>%
+  anti_join(stop_words, by = "word")
 
-1.  Define a list of locations, keywords and topics to search for (can test 2 personas/sets of characteristics to show effective workflow outputs)
+title_tokens
+```
 
-2.  Using web scraping outputs, filter based on above characteristics
 
-3.  Populate a table in R with extracted elements in different columns for each event
+```{r}
+# Visualize most used unigrams for all events
+events_tokens %>%
+  count(word, sort = TRUE) %>%
+  top_n(30) %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) +
+  geom_col() + 
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  ggtitle("Most Used Words in Edmonton RIN Event Descriptions")
+```
 
-4.  Tokenize event descriptions
 
-5.  Remove stop words (the, and, is, etc…) to retain relevant words and named entities
+```{r}
+# Defining first persona (finance focused)
+persona_keywords1 <- c(
+  "business", "entrepreneur", "entrepreneurship",
+  "networking", "network", "connect",
+  
+  "finance", "financial", "funding", "grant", "investment", "investor",
+  "loan", "capital", "venture", "sales", "money", "accounting", "debt", "credit",
+  
+  "workshop", "training", "skills", "program", "bootcamp",
+  "seminar", "mentor", "mentorship", "coaching", "professional",
+  
+  "innovation", "strategy", "growth", "scaling"
+)
 
-6.  Extract information about event dates, locations, and relevant companies/attendees/speakers
+priority_keywords <- c(
+  "financial", "finance", "investment", "investor", "capital", "venture"
+)
 
-7.  Develop a metric for relevance using sentiment analysis based on a combination of word matching frequency with filters, strength of words used, and other factors
+persona_locations <- c("online")
+persona_event_types <- c("workshop", "seminar", "networking")
+```
 
-8.  Assess all events using this metric
 
-9.  Format and display details of the 3-5 most relevant events
+```{r}
+# Defining second persona (tech focused)
+persona_keywords <- c(
+  "ai", "artificial", "intelligence", "machine", "learning",
+  "ml", "neural", "model", "deep", "algorithm", "automation",
+  
+  "data", "analytics", "analysis", "data science", "dataset",
+  "python", "r", "sql", "cloud",
+  
+  "developer", "engineering", "software", "coding", "code",
+  "programming", "tech", "technology",
 
-Notes: once workflow is successful, subsequent report will be made for a specific workflow run (Ex. Run on Dec 1, 2025 for 1 week-1 month ahead of data, then do analysis based on this)
+  "innovation", "startup", "product", "scaling", "tech"
+)
 
-## Table Format
+priority_keywords <- c(
+  "ai", "machine", "learning", "ml", "deep", "neural",
+  "algorithm", "automation", "robotics",
+  "python", "cloud", "technology",
+  "data", "developer", "software"
+)
 
-Want to have across all scrapers:
+persona_locations <- c("online", "virtual", "remote")
 
--   platform (str): page the event came from
+persona_event_types <- c(
+  "workshop", "hackathon", "seminar", "bootcamp"
+)
+```
 
--   title (str): event title
 
--   event_url (str): link to the event
+```{r}
+# Calculate description unigram matches
+desc_hits_tbl <- events_tokens %>%
+  filter(word %in% persona_keywords) %>%
+  count(event_id, name = "desc_hits")
 
--   date (str): the date of the event (mm/dd/yyyy)
+# Calculate priority unigram matches
+priority_hits_tbl <- events_tokens %>%
+  filter(word %in% priority_keywords) %>%
+  count(event_id, name = "priority_hits")
 
--   day_of_week (str): what day it is during the week (Monday, Tuesday, etc...)
+# Calculate title unigram matches
+title_hits_tbl <- title_tokens %>%
+  filter(word %in% persona_keywords) %>%
+  count(event_id, name = "title_hits")
 
--   start_time (str): the time the event starts (ex. 11:00 am given 11:00 am - 1:00 pm)
+# Sentiment analysis on each cleaned token
+afinn <- tidytext::get_sentiments("afinn")
+event_sentiment <- events_tokens %>%
+  inner_join(afinn, by = "word") %>%
+  group_by(event_id) %>%
+  summarise(sentiment = mean(value), .groups = "drop")
 
--   end_time (str): the time the event ends (ex. 1:00 pm given 11:00 am - 1:00 pm)
+# Calculate location unigram matches
+loc_match_tbl <- test_feather %>%
+  mutate(
+    location_lower = tolower(location),
+    loc_match = if_else(
+      str_detect(location_lower, str_c(persona_locations, collapse = "|")), 
+      1L, 0L, missing = 0L)) %>%
+  select(event_id, loc_match)
 
--   location (str): the event location
+# Calculate event type unigram matches
+type_match_tbl <- test_feather %>%
+  mutate(
+    desc_lower = tolower(description),
+    type_match = if_else(
+      str_detect(desc_lower, str_c(persona_event_types, collapse = "|")),
+      1L, 0L, missing = 0L
+    )) %>%
+  select(event_id, type_match)
+```
 
--   description (str): the full event description
+
+```{r}
+# Put together all matches
+events_features <- test_feather %>%
+  left_join(desc_hits_tbl, by = "event_id") %>%
+  left_join(priority_hits_tbl, by = "event_id") %>%
+  left_join(title_hits_tbl, by = "event_id") %>%
+  left_join(event_sentiment, by = "event_id") %>%
+  left_join(loc_match_tbl, by = "event_id") %>%
+  left_join(type_match_tbl, by = "event_id") %>%
+  
+  mutate(
+    desc_hits = replace_na(desc_hits, 0L),
+    priority_hits = replace_na(priority_hits, 0L),
+    title_hits = replace_na(title_hits, 0L),
+    sentiment = replace_na(sentiment, 0),
+    loc_match = replace_na(loc_match, 0L),
+    type_match = replace_na(type_match, 0L)
+  )
+
+events_features
+```
+
+
+```{r}
+# Calculate relevance score based on formula
+events_scored <- events_features %>%
+  mutate(
+    relevance_score =
+      1.0 * desc_hits +
+      2.0 * title_hits +
+      1.5 * priority_hits +
+      0.2 * sentiment +
+      1.0 * loc_match +
+      1.0 * type_match
+  ) %>%
+  arrange(desc(relevance_score))
+
+events_scored
+```
+
+
+```{r}
+# Retrieve top 3 relevant events
+top3_events <- events_scored %>%
+  slice_head(n = 3)
+
+# Display event info conveniently
+top3_events %>%
+  select(
+    title,
+    date,
+    start_time,
+    end_time,
+    location,
+    description,
+    event_url
+  )
+```
+
+
+```{r}
+# Perform NER on most relevant events
+spacy_install()
+spacy_initialize(model = "en_core_web_sm")
+
+ner_people <- spacy_extract_entity(top3_events$description,
+  output = "list",
+  type = "named"
+)
+
+spacy_finalize()
+
+print(ner_people)
+
+```
+

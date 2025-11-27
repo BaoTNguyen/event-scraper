@@ -1,10 +1,30 @@
-const fs = require('fs');
 const { firefox } = require('playwright');
 const cheerio = require('cheerio');
 
 // Start at page 1
 const listingUrl = 'https://www.eventbrite.ca/d/canada--edmonton/business--events--next-week/?page=1';
-const jsonFile = 'events.json';
+
+const normalizeDate = (input) => {
+  if (!input) return { date: null, dayOfWeek: null };
+  const parsed = new Date(input);
+  if (Number.isNaN(parsed.getTime())) return { date: null, dayOfWeek: null };
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const year = parsed.getFullYear();
+  return {
+    date: `${month}/${day}/${year}`,
+    dayOfWeek: parsed.toLocaleString('en-US', { weekday: 'long' }),
+  };
+};
+
+const extractTimes = (text) => {
+  if (!text) return { start: null, end: null };
+  const matches = text.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))/gi);
+  if (!matches || matches.length === 0) return { start: null, end: null };
+  const start = matches[0].toLowerCase();
+  const end = matches.length > 1 ? matches[1].toLowerCase() : null;
+  return { start, end };
+};
 
 async function autoScroll(page) {
   await page.evaluate(async () => {
@@ -81,13 +101,26 @@ async function scrapeEventPage(page, url) {
     const $ = cheerio.load(html);
 
     const title = $('h1[event-title], h1.event-title').first().text().trim() || null;
-    const date = $('time').first().attr('datetime') || null;
-    const time = $('time').first().text().trim() || null;
+    const rawDate = $('time').first().attr('datetime') || null;
+    const rawTime = $('time').first().text().trim() || null;
     const location = $('.start-date-and-location__location').first().text().trim() || null;
     const description =
       $('#event-description, .event-description__content').first().text().trim() || null;
 
-    return { title, event_url: url, date, time, location, description };
+    const dateInfo = normalizeDate(rawDate);
+    const timeInfo = extractTimes(rawTime);
+
+    return {
+      platform: 'eventbrite',
+      title,
+      event_url: url,
+      date: dateInfo.date,
+      day_of_week: dateInfo.dayOfWeek,
+      start_time: timeInfo.start,
+      end_time: timeInfo.end,
+      location,
+      description,
+    };
   } catch (err) {
     // IMPORTANT: swallow timeouts / errors and skip this event.
     // No console.log / console.error, or R will see non-JSON text.

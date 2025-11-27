@@ -12,7 +12,7 @@ library(tidytext)
 library(ggplot2)
 library(stringr)
 library(tidyr)
-library(textdata) 
+# library(textdata) 
 ```
 
 ```{r}
