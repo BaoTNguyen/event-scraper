@@ -1,0 +1,219 @@
+---
+title: "testing"
+author: "Haitam Aksikas"
+format: html
+editor: visual
+---
+
+```{r}
+library(jsonlite)
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+library(stringr)
+library(tidyr)
+library(textdata) 
+```
+
+```{r}
+rin_events <- system("node ./edmontonrin.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble() %>%
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
+
+platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble() %>%
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
+
+eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble() %>%
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
+
+
+
+rin_events
+platformcalgary
+eventbrite
+```
+
+```{r}
+rin_tokens <- rin_events %>%
+  select(event_id, fullDescription) %>%
+  filter(!is.na(fullDescription)) %>%
+  unnest_tokens(output = word, input = fullDescription) %>%
+  anti_join(stop_words)
+
+rin_tokens
+  
+```
+
+```{r}
+title_tokens <- rin_events %>%
+  select(event_id, title) %>%
+  filter(!is.na(title)) %>%
+  unnest_tokens(output = word, input = title) %>%
+  anti_join(stop_words, by = "word")
+
+title_tokens
+```
+
+```{r}
+rin_tokens %>%
+  count(word, sort = TRUE) %>%
+  top_n(30) %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) +
+  geom_col() + 
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  ggtitle("Most Used Words in Edmonton RIN Event Descriptions")
+
+```
+
+```{r}
+persona_keywords1 <- c(
+  "business", "entrepreneur", "entrepreneurship",
+  "networking", "network", "connect",
+  
+  "finance", "financial", "funding", "grant", "investment", "investor",
+  "loan", "capital", "venture", "sales", "money", "accounting", "debt", "credit",
+  
+  "workshop", "training", "skills", "program", "bootcamp",
+  "seminar", "mentor", "mentorship", "coaching", "professional",
+  
+  "innovation", "strategy", "growth", "scaling"
+)
+
+priority_keywords <- c(
+  "financial", "finance", "investment", "investor", "capital", "venture"
+)
+
+persona_locations <- c("online")
+persona_event_types <- c("workshop", "seminar", "networking")
+```
+
+```{r}
+persona_keywords <- c(
+  "ai", "artificial", "intelligence", "machine", "learning",
+  "ml", "neural", "model", "deep", "algorithm", "automation",
+  
+  "data", "analytics", "analysis", "data science", "dataset",
+  "python", "r", "sql", "cloud",
+  
+  "developer", "engineering", "software", "coding", "code",
+  "programming", "tech", "technology",
+
+  "innovation", "startup", "product", "scaling", "tech"
+)
+
+priority_keywords <- c(
+  "ai", "machine", "learning", "ml", "deep", "neural",
+  "algorithm", "automation", "robotics",
+  "python", "cloud", "technology",
+  "data", "developer", "software"
+)
+
+persona_locations <- c("online", "virtual", "remote")
+
+persona_event_types <- c(
+  "workshop", "hackathon", "seminar", "bootcamp"
+)
+
+```
+
+```{r}
+desc_hits_tbl <- rin_tokens %>%
+  filter(word %in% persona_keywords) %>%
+  count(event_id, name = "desc_hits")
+
+priority_hits_tbl <- rin_tokens %>%
+  filter(word %in% priority_keywords) %>%
+  count(event_id, name = "priority_hits")
+
+title_hits_tbl <- title_tokens %>%
+  filter(word %in% persona_keywords) %>%
+  count(event_id, name = "title_hits")
+
+afinn <- tidytext::get_sentiments("afinn")
+event_sentiment <- rin_tokens %>%
+  inner_join(afinn, by = "word") %>%
+  group_by(event_id) %>%
+  summarise(sentiment = mean(value), .groups = "drop")
+
+loc_match_tbl <- rin_events %>%
+  mutate(
+    location_lower = tolower(location),
+    loc_match = if_else(
+      str_detect(location_lower, str_c(persona_locations, collapse = "|")), 
+      1L, 0L, missing = 0L)) %>%
+  select(event_id, loc_match)
+
+type_match_tbl <- rin_events %>%
+  mutate(
+    desc_lower = tolower(fullDescription),
+    type_match = if_else(
+      str_detect(desc_lower, str_c(persona_event_types, collapse = "|")),
+      1L, 0L, missing = 0L
+    )) %>%
+  select(event_id, type_match)
+```
+
+```{r}
+
+events_features <- rin_events %>%
+  left_join(desc_hits_tbl, by = "event_id") %>%
+  left_join(priority_hits_tbl, by = "event_id") %>%
+  left_join(title_hits_tbl, by = "event_id") %>%
+  left_join(event_sentiment, by = "event_id") %>%
+  left_join(loc_match_tbl, by = "event_id") %>%
+  left_join(type_match_tbl, by = "event_id") %>%
+  
+  mutate(
+    desc_hits = replace_na(desc_hits, 0L),
+    priority_hits = replace_na(priority_hits, 0L),
+    title_hits = replace_na(title_hits, 0L),
+    sentiment = replace_na(sentiment, 0),
+    loc_match = replace_na(loc_match, 0L),
+    type_match = replace_na(type_match, 0L)
+  )
+
+events_features
+
+```
+
+```{r}
+events_scored <- events_features %>%
+  mutate(
+    relevance_score =
+      1.0 * desc_hits +
+      2.0 * title_hits +
+      1.5 * priority_hits +
+      0.2 * sentiment +
+      1.0 * loc_match +
+      1.0 * type_match
+  ) %>%
+  arrange(desc(relevance_score))
+
+events_scored
+```
+
+```{r}
+top3_events <- events_scored %>%
+  slice_head(n = 3)
+
+top3_events %>%
+  select(
+    title,
+    date,
+    startTime,
+    endTime,
+    location,
+    fullDescription,
+    eventUrl
+  )
+```
