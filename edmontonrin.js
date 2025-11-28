@@ -9,13 +9,11 @@ const fs = require("fs");
     waitUntil: "networkidle",
   });
 
-  // Today at midnight to filter past events
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayTime = today.getTime();
 
 
-  //V1: Scrape listing page + filter future events
   const events = await page.$$eval(
     "article.eventlist-event",
     (articles, todayTime) => {
@@ -67,7 +65,6 @@ const fs = require("fs");
   );
 
 
-  //Visit each event page and extract fullDescription
   for (const evt of events) {
     if (!evt.eventUrl) continue;
 

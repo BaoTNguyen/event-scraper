@@ -1,0 +1,310 @@
+---
+title: "Model Portion"
+author: "Haitam Aksikas"
+format: html
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(tibble)
+library(arrow)
+library(tidyverse)
+library(spacyr)
+library(textdata)
+```
+
+## Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite). 
+
+```{r}
+edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble()
+```
+
+```{r}
+platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble()
+```
+
+```{r}
+eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>% 
+  fromJSON() %>% 
+  as_tibble()
+```
+
+**Putting all the information together in 1 formatted table (all_events)**
+
+```{r}
+all_events <- bind_rows(edmontonrin, platformcalgary, eventbrite) %>%
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
+all_events
+```
+
+## Part 2: NLP Analysis (Aymen)
+
+## Part 3: Model to output the top 3 most relevant events for a given persona (Haitam)
+
+Creating tokens for each word that appears in both the title and description of an event. The key idea is to use these tokens and compare them to an individuals "preferences" or "keywords" to determine if there is a match. More matched words leads the model to suggesting which events would be the best fit.
+
+Can make adjustments to this after doing the NLP analysis.
+
+```{r}
+desc_tokens <- all_events %>%
+  select(event_id, description) %>%
+  filter(!is.na(description)) %>%
+  unnest_tokens(output = word, input = description) %>%
+  anti_join(stop_words)
+
+title_tokens <- all_events %>%
+  select(event_id, title) %>%
+  filter(!is.na(title)) %>%
+  unnest_tokens(output = word, input = title) %>%
+  anti_join(stop_words, by = "word")
+
+```
+
+```{r}
+match_desc <- function(tokens, persona) {
+  tokens %>%
+    filter(word %in% persona$keywords) %>%
+    count(event_id, name = "Desc_Matches")
+}
+
+
+match_desc_priority <- function(tokens, persona) {
+  tokens %>%
+    filter(word %in% persona$priority_keywords) %>%
+    count(event_id, name = "Desc_Priority_Matches")
+}
+
+
+match_title <- function(tokens, persona) {
+  tokens %>%
+    filter(word %in% persona$keywords) %>%
+    count(event_id, name = "Title_Matches")
+}
+
+
+event_sentiment <- function(tokens, lexicon = "afinn") {
+  afinn <- tidytext::get_sentiments(lexicon)
+  
+  tokens %>%
+    inner_join(afinn, by = "word") %>%
+    group_by(event_id) %>%
+    summarise(Sentiment_Score = mean(value), .groups = "drop")
+}
+
+
+match_location <- function(events, persona) {
+  events %>%
+    mutate(
+      location_lower = tolower(location),
+      Location_Matches = if_else(
+        str_detect(location_lower, str_c(persona$locations, collapse = "|")),
+        1, 0, missing = 0)) %>%
+    select(event_id, Location_Matches)
+}
+
+
+match_type <- function(events, persona) {
+  events %>%
+    mutate(
+      desc_lower = tolower(description),
+      Type_Matches = if_else(
+        str_detect(desc_lower, str_c(persona$event_types, collapse = "|")),
+        1L, 0L, missing = 0L)) %>%
+    select(event_id, Type_Matches)
+}
+```
+
+```{r}
+build_event_features <- function(all_events, desc_tokens, title_tokens, persona) {
+  
+  desc_hits_tbl     <- match_desc(desc_tokens, persona)
+  priority_hits_tbl <- match_desc_priority(desc_tokens, persona)
+  title_hits_tbl    <- match_title(title_tokens, persona)
+  sentiment_tbl     <- event_sentiment(desc_tokens)
+  loc_match_tbl     <- match_location(all_events, persona)
+  type_match_tbl    <- match_type(all_events, persona)
+  
+  all_events %>%
+    left_join(desc_hits_tbl,     by = "event_id") %>%
+    left_join(priority_hits_tbl, by = "event_id") %>%
+    left_join(title_hits_tbl,    by = "event_id") %>%
+    left_join(sentiment_tbl,     by = "event_id") %>%
+    left_join(loc_match_tbl,     by = "event_id") %>%
+    left_join(type_match_tbl,    by = "event_id") %>%
+    mutate(
+      Desc_Matches          = replace_na(Desc_Matches, 0),
+      Desc_Priority_Matches = replace_na(Desc_Priority_Matches, 0),
+      Title_Matches         = replace_na(Title_Matches, 0),
+      Sentiment_Score       = replace_na(Sentiment_Score, 0),
+      Location_Matches      = replace_na(Location_Matches, 0),
+      Type_Matches          = replace_na(Type_Matches, 0)
+    )
+}
+```
+
+```{r}
+score_event_relevance <- function(events_features) {
+  
+  scored <- events_features %>%
+    mutate(
+      raw_score =
+        1.0 * Desc_Matches +
+        1.5 * Title_Matches +
+        1.5 * Desc_Priority_Matches +
+        0.2 * Sentiment_Score +
+        1.0 * Location_Matches +
+        1.0 * Type_Matches
+    )
+  
+  min_val <- min(scored$raw_score, na.rm = TRUE)
+  max_val <- max(scored$raw_score, na.rm = TRUE)
+  
+  scored %>%
+    mutate(relevance_score = round(1 + 9 * ((raw_score - min_val) / (max_val - min_val)), 2)) %>%
+    
+    arrange(desc(relevance_score))
+}
+
+```
+
+```{r}
+get_top_events <- function(events_scored, n = 3) {
+  events_scored %>%
+    slice_head(n = n) %>%
+    select(
+      title,
+      date,
+      start_time,
+      end_time,
+      location,
+      description,
+      event_url,
+      relevance_score
+    )
+}
+```
+
+```{r}
+persona_finance_student <- list(
+  
+  keywords = c(
+    "finance", "financial", "investment", "investing", "markets",
+    "economics", "trading", "derivatives", "valuation", "analytics",
+    "data", "economy", "portfolio", "risk", "venture", "credit", "debt",
+    "banking", "capital", "wealth", "equity", "fund", "money"
+  ),
+  
+  priority_keywords = c("finance", "internship", "trading", "analyst", "mentorship", "professional"),
+  
+  locations = c("virtual", "online"),
+  
+  event_types = c("networking", "career fair", "seminar")
+)
+```
+
+```{r}
+persona_tech_student <- list(
+  
+  keywords = c(
+    "tech", "technology", "software", "developer", "coding",
+    "programming", "data", "python", "r", "cloud", "app",
+    "machine", "learning", "ai", "intelligence", "artificial"
+  ),
+  
+  priority_keywords = c(
+    "hackathon", "developer", "internship", "programming"
+  ),
+  
+  locations = c("calgary"),
+  
+  event_types = c("workshop", "webinar", "hackathon")
+)
+
+```
+
+```{r}
+persona_entrepreneur <- list(
+  
+  keywords = c(
+    "entrepreneur", "startup", "business", "innovation",
+    "pitch", "founder", "funding", "capital", "growth", "strategy",
+    "marketing", "strategy", "leadership", "sales", "money", "sales"
+  ),
+  
+  priority_keywords = c(
+    "sales", "pitch", "startup", "entrepreneur", "mentor"
+  ),
+  
+  locations = c("virtual", "online"),
+  
+  event_types = c(
+    "networking", "pitch", "seminar"
+  )
+)
+```
+
+```{r}
+events_features_1 <- build_event_features(
+  all_events,
+  desc_tokens,
+  title_tokens,
+  persona_finance_student
+)
+
+events_scored_1 <- score_event_relevance(events_features_1)
+top3_events_1 <- get_top_events(events_scored_1, 3)
+top3_events_1
+
+```
+
+```{r}
+events_features_2 <- build_event_features(
+  all_events,
+  desc_tokens,
+  title_tokens,
+  persona_tech_student
+)
+
+events_scored_2 <- score_event_relevance(events_features_2)
+top3_events_2 <- get_top_events(events_scored_2, 3)
+top3_events_2
+```
+
+```{r}
+events_features_3 <- build_event_features(
+  all_events,
+  desc_tokens,
+  title_tokens,
+  persona_entrepreneur
+)
+
+events_scored_3 <- score_event_relevance(events_features_3)
+top3_events_3 <- get_top_events(events_scored_3, 3)
+top3_events_3
+```
+
+Part 3: NER Analysis (Bao)
+
+```{r}
+# Perform NER on most relevant events
+spacy_install()
+spacy_initialize(model = "en_core_web_sm")
+
+ner_people <- spacy_extract_entity(top3_events_2$description,
+  output = "list",
+  type = "named"
+)
+
+spacy_finalize()
+
+print(ner_people)
+```

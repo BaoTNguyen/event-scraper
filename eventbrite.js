@@ -1,7 +1,6 @@
 const { firefox } = require('playwright');
 const cheerio = require('cheerio');
 
-// Start at page 1
 const listingUrl = 'https://www.eventbrite.ca/d/canada--edmonton/business--events--next-week/?page=1';
 
 const normalizeDate = (input) => {
@@ -51,7 +50,6 @@ async function scrapeAllListingPages(page, startingUrl) {
   const allEventUrls = new Set();
 
   while (currentPageUrl) {
-    // IMPORTANT: no console.log here – R must only see JSON
     await page.goto(currentPageUrl, {
       waitUntil: 'domcontentloaded',    // less likely to hang than "networkidle"
       timeout: 45000
@@ -59,7 +57,6 @@ async function scrapeAllListingPages(page, startingUrl) {
     await autoScroll(page);
     await page.waitForTimeout(2000);
 
-    // Collect event links
     const eventLinks = await page.$$eval(
       '.discover-vertical-event-card a.event-card-link',
       (links) => {
@@ -75,14 +72,13 @@ async function scrapeAllListingPages(page, startingUrl) {
 
     eventLinks.forEach((url) => allEventUrls.add(url));
 
-    // Check for "Next Page" button
     const nextButton = await page.$('button[data-testid="page-next"]:not([aria-disabled="true"])');
     if (nextButton) {
       await nextButton.click();
-      await page.waitForTimeout(3000); // wait for page to load
-      currentPageUrl = page.url();     // update URL
+      await page.waitForTimeout(3000);
+      currentPageUrl = page.url();  
     } else {
-      currentPageUrl = null;           // no more pages
+      currentPageUrl = null;      
     }
   }
 
@@ -122,8 +118,6 @@ async function scrapeEventPage(page, url) {
       description,
     };
   } catch (err) {
-    // IMPORTANT: swallow timeouts / errors and skip this event.
-    // No console.log / console.error, or R will see non-JSON text.
     return null;
   }
 }
@@ -138,10 +132,9 @@ async function scrapeEventPage(page, url) {
     const eventsData = [];
     for (const url of eventUrls) {
       const data = await scrapeEventPage(page, url);
-      if (data) eventsData.push(data);   // only push successful scrapes
+      if (data) eventsData.push(data);  
     }
 
-    // ONLY THIS LINE OUTPUTS ANYTHING → valid JSON for R
     console.log(JSON.stringify(eventsData, null, 2));
   } finally {
     await browser.close();

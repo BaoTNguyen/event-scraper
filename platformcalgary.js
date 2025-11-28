@@ -1,4 +1,3 @@
-// SCRAPES EVENTS FROM PLATFORM CALGARY
 const { firefox } = require("playwright");
 const cheerio = require("cheerio");
 
@@ -8,7 +7,6 @@ const cheerio = require("cheerio");
 
   await page.goto("https://www.platformcalgary.com/events", { waitUntil: "networkidle" });
 
-  // Scroll to events section to trigger FinSweet lazy load and wait for cards to render
   await page.locator("#community").scrollIntoViewIfNeeded();
   await page.waitForSelector('section#community [fs-cmsfilter-element="list"] .w-dyn-item', { timeout: 15000 });
   await page.waitForTimeout(1200);
