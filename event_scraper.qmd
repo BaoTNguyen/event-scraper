@@ -62,7 +62,6 @@ Want to have across all scrapers:
 
 -   description (str): the full event description
 
-
 ```{r}
 # Load libraries
 library(dplyr)
@@ -74,6 +73,8 @@ library(arrow)
 library(tidyverse)
 library(spacyr)
 library(textdata)
+library(tidytext)
+library(jsonlite)
 ```
 
 ## Run Platform Calgary scraper (Node)
@@ -85,15 +86,12 @@ pc_events <- system("node ./platformcalgary.js", intern = TRUE) %>%
   dplyr::as_tibble()
 ```
 
-
 ```{r}
 # Eventbrite scraper
 eb_events <- system("node ./eventbrite.js", intern = TRUE) %>% 
   jsonlite::fromJSON() %>%
   dplyr::as_tibble()
 ```
-
-
 
 ```{r, eval=FALSE}
 # ONLY THIS BLOCK WORKS FOR BAO
@@ -130,8 +128,6 @@ eb_events <- jsonlite::fromJSON(eb_clean) %>%
 print(eb_events)
 ```
 
-
-
 ```{r}
 # ERIN scraper
 etest_feather <- system("node ./edmontonrin.js", intern = TRUE) %>% 
@@ -139,8 +135,6 @@ etest_feather <- system("node ./edmontonrin.js", intern = TRUE) %>%
   dplyr::as_tibble()
 
 ```
-
-
 
 ```{r}
 # Make a list of tibbles
@@ -157,8 +151,6 @@ arrow::write_feather(combined_events, "combined_events.feather")
 test_feather <- arrow::read_feather("combined_events.feather")
 ```
 
-
-
 ```{r}
 # Tokenize unigrams and remove stopwords (replace test_feather with actual run)
 events_tokens <- test_feather %>%
@@ -171,7 +163,6 @@ events_tokens
 
 ```
 
-
 ```{r}
 title_tokens <- test_feather %>%
   select(event_id, title) %>%
@@ -181,7 +172,6 @@ title_tokens <- test_feather %>%
 
 title_tokens
 ```
-
 
 ```{r}
 # Visualize most used unigrams for all events
@@ -193,7 +183,7 @@ events_tokens %>%
   coord_flip() +
   theme_minimal() +
   theme(legend.position = "none") +
-  ggtitle("Most Used Words in Edmonton RIN Event Descriptions")
+  ggtitle("Most Used Words In All Event Descriptions")
 ```
 
 
@@ -219,6 +209,7 @@ priority_keywords <- c(
 persona_locations <- c("online")
 persona_event_types <- c("workshop", "seminar", "networking")
 ```
+
 
 
 ```{r}
@@ -249,6 +240,7 @@ persona_event_types <- c(
   "workshop", "hackathon", "seminar", "bootcamp"
 )
 ```
+
 
 
 ```{r}
@@ -295,6 +287,7 @@ type_match_tbl <- test_feather %>%
 ```
 
 
+
 ```{r}
 # Put together all matches
 events_features <- test_feather %>%
@@ -318,6 +311,7 @@ events_features
 ```
 
 
+
 ```{r}
 # Calculate relevance score based on formula
 events_scored <- events_features %>%
@@ -334,6 +328,7 @@ events_scored <- events_features %>%
 
 events_scored
 ```
+
 
 
 ```{r}
@@ -355,10 +350,124 @@ top3_events %>%
 ```
 
 
+
+```{r}
+# Process NER
+# Load from feather file (replace with actual tibble later)
+combined_events <- read_feather("combined_events.feather")
+
+# Initialize spaCy
+spacy_install()
+
+# STILL WORKING ON LOADING TRANSFORMER MODEL
+# reticulate::py_install(
+#   packages = c("spacy-transformers", "torch"),
+#   envname = "r-spacyr",
+#   pip = TRUE
+# )
+# reticulate::py_run_string("
+# import spacy
+# nlp = spacy.load('en_core_web_trf')
+# print('Loaded model:', nlp.meta['name'])
+# print('Pipeline:', nlp.pipe_names)
+# ")
+# spacy_download_langmodel(lang_models = "en_core_web_trf")
+
+spacy_initialize(model = "en_core_web_sm")
+
+# Run NER + noun phrases across all descriptions
+ner_df <- spacy_extract_entity(
+  combined_events$description,
+  output = "data.frame"
+) %>% 
+  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
+  tibble::as_tibble()
+
+
+np_df <- spacy_extract_nounphrases(
+  combined_events$description,
+  output = "data.frame"
+) %>% 
+  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
+  tibble::as_tibble()
+
+
+spacy_finalize()
+
+# Keep useful entity types and regroup by category
+keep_types <- c("PERSON", "ORG", "GPE")
+entity_category_map <- tibble(
+  entity_type = keep_types,
+  category = c("People", "Organizations", "Places")
+)
+
+# Clean up entities and output important entities
+entities_tbl <- ner_df %>%
+  filter(ent_type %in% keep_types) %>%
+  unnest_tokens(output = token, input = text) %>%                     # split entity into tokens
+  anti_join(stop_words, by = c("token" = "word")) %>%  # remove stop words
+  group_by(doc_id, ent_type, length) %>%
+  summarise(
+    entity_clean = str_c(token, collapse = " "),
+    length = n(),
+    .groups = "drop"
+  ) %>%
+  filter(entity_clean != "") %>%                       # drop any empty results
+  left_join(entity_category_map, join_by("ent_type" == "entity_type")) %>%
+  distinct(doc_id, category, entity_clean) %>%
+  group_by(doc_id, category) %>%
+  summarise(entities = list(entity_clean), .groups = "drop")
+
+entities_tbl_long <- entities_tbl %>% 
+  pivot_wider(names_from = category, values_from = entities)
+
+# Clean up extracted named entities
+ner_tokens <- ner_df %>% 
+  unnest_tokens(output = word, input = text) %>% 
+  anti_join(stop_words, by = "word")
+
+ner_clean <- ner_tokens %>%
+  group_by(doc_id, start_id, length) %>%  # keys for an entity
+  summarise(clean_text = str_c(word, collapse = " "),
+            length = n(),
+            .groups = "drop")
+
+
+
+
+# Clean up extracted noun phrases
+np_tokens <- np_df %>% 
+  unnest_tokens(output = word, input = text) %>% 
+  anti_join(stop_words, by = "word")
+
+np_clean <- np_tokens %>%
+  group_by(doc_id, root_id, start_id, length) %>%  # keys for a phrase
+  summarise(clean_text = str_c(word, collapse = " "),
+            length = n(),
+            .groups = "drop") %>%
+  filter(clean_text != "") %>% 
+  filter(length > 1)
+
+nounphrases_tbl <- np_clean %>%
+  mutate(clean_text = str_squish(clean_text)) %>%
+  group_by(doc_id) %>%
+  summarise(noun_phrases = list(unique(clean_text)), .groups = "drop")
+
+# Attach enriched info to combined events for downstream personas / visualizations
+combined_events_enriched <- combined_events %>%
+  left_join(entities_tbl,   join_by("event_id" == "doc_id")) %>%
+  left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
+
+combined_events_enriched
+
+```
+
+
+
 ```{r}
 # Perform NER on most relevant events
 spacy_install()
-spacy_initialize(model = "en_core_web_sm")
+spacy_initialize(model = "en_core_web_trf")
 
 ner_people <- spacy_extract_entity(top3_events$description,
   output = "list",
@@ -368,6 +477,4 @@ ner_people <- spacy_extract_entity(top3_events$description,
 spacy_finalize()
 
 print(ner_people)
-
 ```
-

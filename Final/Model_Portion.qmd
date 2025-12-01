@@ -5,7 +5,7 @@ format: html
 editor: visual
 ---
 
-```{r}
+```{r, include=FALSE}
 library(dplyr)
 library(tidyr)
 library(purrr)
@@ -15,9 +15,11 @@ library(arrow)
 library(tidyverse)
 library(spacyr)
 library(textdata)
+library(jsonlite)
+library(tidytext)
 ```
 
-## Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite). 
+## Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite).
 
 ```{r}
 edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>% 
