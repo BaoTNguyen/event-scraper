@@ -148,24 +148,15 @@ nlp_tokens <- nlp_tokens %>% dplyr::filter(stri_count_words(phrase) >= 3) %>% un
 
 ```{r}
 
-pos_neg_sent <- tidytext::sentiments
-
-networking_words <- c("network", "meet", "job", "work",
-                      "friend", "relationship", "mixer", "peer",
-                      "engage", "exchange", "open networking",
-                      "social", "mingle", "introduction", "collaborate",
-                      "partnership", "discuss", "roundtable")
-
-
-seminar_words <- c("listen", "watch", "expert", "seminar", "lecture", "advice",
-                   "workshop", "masterclass", "learning", "walkthrough",
-                   "module", "demonstration", "training", "presentation",
-                   "speaker", "Q&A", "development")
-
-
-
-
-
+networking_words <- list(
+  
+  keywords = c("network","networking", "meet", "job", "work","friend",
+               "relationship", "mixer","peer"),
+  
+  others = c("engage", "exchange","social", "mingle", "introduction", 
+             "collaborate", "partnership", "discuss", "roundtable")
+  
+)
 
 
 
@@ -293,7 +284,6 @@ for(i in 1:nrow(nlp_type)){
 
 nlp_type$Networking[i] <- grepl(nlp_type[i,2], paste(networking_words, collapse = ""))
 
-nlp_type$Seminar[i] <- grepl(nlp_type[i,2], paste(seminar_words, collapse = ""))
 
 }
 
@@ -310,13 +300,13 @@ nlp_type %>%
                       y = Score,
                       fill = Score))+
   geom_col()+
-  facet_grid(Type ~.)+
   theme(panel.grid.minor.x = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.background = element_rect(fill = "lightgrey"),
         legend.position = "none")+
   labs(title = "Event Type Scores",
-       )
+       )+
+  coord_flip()
   
 
 
@@ -336,7 +326,7 @@ nlp_type_scores <- nlp_type%>%
 
 -   Find words outside of our lexicon searches that are highly repeated and distinguish them as potential unrecognized event types
 
--   Print in console top 3 events and why they match the persona.
+-   Print in console top 3 events and why they match the persona. \*\* USE THIS\*\*
 
 -   Perhaps a new lexicon of words to avoid? A meter of suspicion perhaps?
 
@@ -372,7 +362,20 @@ event_words <- nlp_type %>% dplyr::filter(Contains != 0)%>%
 
         -   nlp_type –\> nlp_type_scores & event_scores
 
-Importance: all_events –\> nlp_token_1 –\> nlp_type –\> everything else
+Importance: all_events –\> nlp_token_1 –\> nlp_type –\> everything else\
+\
+\
+Ideas:
+
+-   igraph:
+
+    -   Look for a way to improve the visual itself and how its displayed. There is more you can show – perhaps base the igraph on events were already interested in, and create the igraph based on nlp_token_1, and base the size of each node on the count of times each word is used. Also potentially change event id's to titles. (more of an end product)
+
+    -   After –\> create a bigram igraph to look for more specific phrases.
+
+-   Differentiating between different lexicons - We are mainly interested in networking, so we can have the lexicon completely related to networking so it takes less time, and simplifies workflow. So essentially just create a "networking score".
+
+-   Connecting NLP to ML: most ML functions pull from persona's Haitam made.
 
 ## *Part 3: Model to output the top 3 most relevant events for a given persona (Haitam)*
 
@@ -396,35 +399,88 @@ title_tokens <- all_events %>%
 ```
 
 ```{r}
+# DONE MATCH DESC SYNC WITH NLP
 match_desc <- function(tokens, persona) {
-  tokens %>%
-    filter(word %in% persona$keywords) %>%
-    count(event_id, name = "Desc_Matches")
-}
 
-
-match_desc_priority <- function(tokens, persona) {
-  tokens %>%
-    filter(word %in% persona$priority_keywords) %>%
-    count(event_id, name = "Desc_Priority_Matches")
-}
-
-
-match_title <- function(tokens, persona) {
-  tokens %>%
-    filter(word %in% persona$keywords) %>%
-    count(event_id, name = "Title_Matches")
-}
-
-
-event_sentiment <- function(tokens, lexicon = "afinn") {
-  afinn <- tidytext::get_sentiments(lexicon)
   
-  tokens %>%
-    inner_join(afinn, by = "word") %>%
-    group_by(event_id) %>%
-    summarise(Sentiment_Score = mean(value), .groups = "drop")
+tokens$Contains <- "" # initializing the contains column 
+
+  for(i in 1:nrow(tokens)){
+  
+  tokens$Contains[i] <- grepl(tokens[i,2], paste(persona, collapse = ""))
+  
+  }
+# counting each instance per event that a persona word matches 
+tokens %>%
+  filter(Contains != "FALSE") %>%
+  select(event_id)%>%
+  count(event_id, name = "Desc_Matches")
+  
 }
+
+#__________________________________________________________________________________
+# DONE MATCH TITLE SYNC WITH NLP
+match_title <- function(tokens, persona) {
+  
+tokens$Contains <- "" # initializing the contains column 
+
+  for(i in 1:nrow(tokens)){
+  
+  tokens$Contains[i] <- grepl(tokens[i,2], paste(persona, collapse = ""))
+  
+  }
+
+# counting each instance per event title that a persona word matches 
+tokens %>%
+  filter(Contains != "FALSE") %>%
+  select(event_id)%>%
+  count(event_id, name = "Title_Matches")
+}
+
+#__________________________________________________________________________________
+
+event_sentiment_key <- function(tokens, lexicon) {
+
+tokens$Contains <- ""
+
+  
+  for(i in 1:nrow(tokens)){
+  
+  tokens$Contains[i] <- grepl(tokens[i,2], paste(lexicon$keywords, 
+                                                       collapse = ""))
+  
+  }
+  
+tokens %>%
+  filter(Contains != "FALSE") %>%
+  select(event_id)%>%
+  count(event_id, name = "Sentiment_Key_Matches")
+
+
+}
+
+#__________________________________________________________________________________
+
+event_sentiment_other <- function(tokens, lexicon) {
+
+tokens$Contains <- ""
+
+  
+  for(i in 1:nrow(tokens)){
+  
+  tokens$Contains[i] <- grepl(tokens[i,2], paste(lexicon$others, 
+                                                       collapse = ""))
+  
+  }
+  
+tokens %>%
+  filter(Contains != "FALSE") %>%
+  select(event_id)%>%
+  count(event_id, name = "Sentiment_Other_Matches")
+
+}
+
+#__________________________________________________________________________________
 
 
 match_location <- function(events, persona) {
@@ -450,27 +506,28 @@ match_type <- function(events, persona) {
 ```
 
 ```{r}
-build_event_features <- function(all_events, desc_tokens, title_tokens, persona) {
+build_event_features <- function(all_events, desc_tokens, title_tokens, 
+                                 persona, networking_words) {
   
   desc_hits_tbl     <- match_desc(desc_tokens, persona)
-  priority_hits_tbl <- match_desc_priority(desc_tokens, persona)
   title_hits_tbl    <- match_title(title_tokens, persona)
-  sentiment_tbl     <- event_sentiment(desc_tokens)
+  sentiment_key_tbl <- event_sentiment_key(desc_tokens, networking_words)
+  sentiment_other_tbl <- event_sentiment_other(desc_tokens, networking_words)
   loc_match_tbl     <- match_location(all_events, persona)
   type_match_tbl    <- match_type(all_events, persona)
   
   all_events %>%
     left_join(desc_hits_tbl,     by = "event_id") %>%
-    left_join(priority_hits_tbl, by = "event_id") %>%
-    left_join(title_hits_tbl,    by = "event_id") %>%
-    left_join(sentiment_tbl,     by = "event_id") %>%
+    left_join(title_hits_tbl, by = "event_id") %>%
+    left_join(sentiment_key_tbl,    by = "event_id") %>%
+    left_join(sentiment_other_tbl,     by = "event_id") %>%
     left_join(loc_match_tbl,     by = "event_id") %>%
     left_join(type_match_tbl,    by = "event_id") %>%
     mutate(
       Desc_Matches          = replace_na(Desc_Matches, 0),
-      Desc_Priority_Matches = replace_na(Desc_Priority_Matches, 0),
       Title_Matches         = replace_na(Title_Matches, 0),
-      Sentiment_Score       = replace_na(Sentiment_Score, 0),
+      Sentiment_Key_Matches       = replace_na(Sentiment_Key_Matches, 0),
+      Sentiment_Other_Matches       = replace_na(Sentiment_Other_Matches, 0),
       Location_Matches      = replace_na(Location_Matches, 0),
       Type_Matches          = replace_na(Type_Matches, 0)
     )
@@ -485,8 +542,8 @@ score_event_relevance <- function(events_features) {
       raw_score =
         1.0 * Desc_Matches +
         1.5 * Title_Matches +
-        1.5 * Desc_Priority_Matches +
-        0.2 * Sentiment_Score +
+        1.5 * Sentiment_Key_Matches +
+        0.2 * Sentiment_Other_Matches +
         1.0 * Location_Matches +
         1.0 * Type_Matches
     )
@@ -583,7 +640,8 @@ events_features_1 <- build_event_features(
   all_events,
   desc_tokens,
   title_tokens,
-  persona_finance_student
+  persona_finance_student,
+  networking_words
 )
 
 events_scored_1 <- score_event_relevance(events_features_1)
