@@ -62,7 +62,7 @@ Want to have across all scrapers:
 
 -   description (str): the full event description
 
-```{r}
+```{r, include=FALSE}
 # Load libraries
 library(dplyr)
 library(tidyr)
@@ -354,26 +354,22 @@ top3_events %>%
 ```{r}
 # Process NER
 # Load from feather file (replace with actual tibble later)
-combined_events <- read_feather("combined_events.feather")
+# Preprocess description for spaCy
+combined_events <- read_feather("combined_events.feather") %>%
+  mutate(
+    description_clean = description %>%
+      str_replace_all("([a-z])(\\.[A-Z])", "\\1. \\2") %>%   # add space after a period glued to a capital
+      str_replace_all("([a-z])(,[A-Z])", "\\1, \\2") %>%     # add space after a comma glued to a capital
+      str_replace_all("([A-Za-z])'s", "\\1 's") %>%          # ensure space before possessive ’s
+      str_replace_all("([A-Z]{2,})([A-Z][a-z])", "\\1 \\2") %>%  # split run-on capitals
+      str_squish()
+  )
+
 
 # Initialize spaCy
 spacy_install()
-
-# STILL WORKING ON LOADING TRANSFORMER MODEL
-# reticulate::py_install(
-#   packages = c("spacy-transformers", "torch"),
-#   envname = "r-spacyr",
-#   pip = TRUE
-# )
-# reticulate::py_run_string("
-# import spacy
-# nlp = spacy.load('en_core_web_trf')
-# print('Loaded model:', nlp.meta['name'])
-# print('Pipeline:', nlp.pipe_names)
-# ")
-# spacy_download_langmodel(lang_models = "en_core_web_trf")
-
-spacy_initialize(model = "en_core_web_sm")
+spacy_download_langmodel("en_core_web_trf")
+spacy_initialize(model = "en_core_web_trf")
 
 # Run NER + noun phrases across all descriptions
 ner_df <- spacy_extract_entity(
@@ -383,6 +379,10 @@ ner_df <- spacy_extract_entity(
   mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
   tibble::as_tibble()
 
+# Preprocessing NER dataframe before further cleaning
+ner_df_clean <- ner_df %>%
+  filter(!str_detect(text, "@"),
+         !str_detect(text, "https?://"))
 
 np_df <- spacy_extract_nounphrases(
   combined_events$description,
@@ -398,28 +398,45 @@ spacy_finalize()
 keep_types <- c("PERSON", "ORG", "GPE")
 entity_category_map <- tibble(
   entity_type = keep_types,
-  category = c("People", "Organizations", "Places")
+  category = c("people", "organizations", "places")
 )
 
-# Clean up entities and output important entities
-entities_tbl <- ner_df %>%
+# Test entity cleanup (deduplication and normalization)
+entities_tbl <- ner_df_clean %>%
   filter(ent_type %in% keep_types) %>%
-  unnest_tokens(output = token, input = text) %>%                     # split entity into tokens
-  anti_join(stop_words, by = c("token" = "word")) %>%  # remove stop words
-  group_by(doc_id, ent_type, length) %>%
+  mutate(
+    entity_id   = row_number(),     # remember each original span
+    orig_entity = text              # save original casing
+  ) %>%
+  unnest_tokens(token, text) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  group_by(doc_id, ent_type, entity_id, orig_entity) %>%
   summarise(
-    entity_clean = str_c(token, collapse = " "),
-    length = n(),
+    entity_clean_tokens = list(token),
     .groups = "drop"
   ) %>%
-  filter(entity_clean != "") %>%                       # drop any empty results
-  left_join(entity_category_map, join_by("ent_type" == "entity_type")) %>%
-  distinct(doc_id, category, entity_clean) %>%
+  mutate(
+    token_count = lengths(entity_clean_tokens),
+    entity_clean = map_chr(entity_clean_tokens, ~ str_c(.x, collapse = " ")),
+    entity_clean = str_squish(entity_clean),
+    entity_clean = if_else(
+      str_detect(orig_entity, "[A-Z]{2,}") | str_detect(orig_entity, "[A-Za-z][A-Z]"),
+      orig_entity,                          # keep acronyms/mixed case
+      str_to_title(entity_clean)            # normalize regular names
+    )
+  ) %>%
+  filter(entity_clean != "") %>%
+  distinct(doc_id, ent_type, entity_clean) %>%
+  left_join(entity_category_map, by = c("ent_type" = "entity_type")) %>%
   group_by(doc_id, category) %>%
-  summarise(entities = list(entity_clean), .groups = "drop")
+  summarise(
+    entities = list(unique(entity_clean)),   # deduplicated vectors
+    .groups = "drop"
+  )
 
 entities_tbl_long <- entities_tbl %>% 
   pivot_wider(names_from = category, values_from = entities)
+
 
 # Clean up extracted named entities
 ner_tokens <- ner_df %>% 
@@ -455,7 +472,7 @@ nounphrases_tbl <- np_clean %>%
 
 # Attach enriched info to combined events for downstream personas / visualizations
 combined_events_enriched <- combined_events %>%
-  left_join(entities_tbl,   join_by("event_id" == "doc_id")) %>%
+  left_join(entities_tbl_long,   join_by("event_id" == "doc_id")) %>%
   left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
 
 combined_events_enriched
@@ -465,16 +482,16 @@ combined_events_enriched
 
 
 ```{r}
-# Perform NER on most relevant events
-spacy_install()
-spacy_initialize(model = "en_core_web_trf")
-
-ner_people <- spacy_extract_entity(top3_events$description,
-  output = "list",
-  type = "named"
-)
-
-spacy_finalize()
-
-print(ner_people)
+# Perform NER on most relevant events (irrelevant now)
+# spacy_install()
+# spacy_initialize(model = "en_core_web_trf")
+# 
+# ner_people <- spacy_extract_entity(top3_events$description,
+#   output = "list",
+#   type = "named"
+# )
+# 
+# spacy_finalize()
+# 
+# print(ner_people)
 ```
