@@ -89,10 +89,8 @@ all_events_raw[1,]%>%
 \*\* NER EXPLANATION HERE EXPLAINING THE UPDATED FEATURE LIST \*\*
 
 ```{r}
-# Process NER
-# Load from feather file (replace with actual tibble later)
 # Preprocess description for spaCy
-all_events <- all_events_raw %>% 
+all_events <- all_events_raw %>%
   mutate(
     description_clean = description %>%
       str_replace_all("([a-z])(\\.[A-Z])", "\\1. \\2") %>%   # add space after a period glued to a capital
@@ -102,32 +100,35 @@ all_events <- all_events_raw %>%
       str_squish()
   )
 
+```
 
-# Initialize spaCy
+```{r}
+# Install and prepare spaCy transformer model
 spacy_install()
-spacy_download_langmodel("en_core_web_sm")
-spacy_initialize(model = "en_core_web_sm")
+spacy_download_langmodel("en_core_web_trf")
+```
 
-# Run NER + noun phrases across all descriptions
+```{r}
+# Initialize spaCy
+spacy_initialize(model = "en_core_web_trf")
+
+# NER extraction across all descriptions
 ner_df <- spacy_extract_entity(
   all_events$description,
   output = "data.frame"
 ) %>% 
   mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
-  tibble::as_tibble()
+  tibble::as_tibble() %>% # Preprocessing dataframe before further cleaning
+  filter(!str_detect(text, "@"), # Remove email addresses
+         !str_detect(text, "https?://")) # Remove links
 
-# Preprocessing NER dataframe before further cleaning
-ner_df_clean <- ner_df %>%
-  filter(!str_detect(text, "@"),
-         !str_detect(text, "https?://"))
-
+# Noun phrase extraction across all descriptions
 np_df <- spacy_extract_nounphrases(
   all_events$description,
   output = "data.frame"
 ) %>% 
   mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
   tibble::as_tibble()
-
 
 spacy_finalize()
 
@@ -138,82 +139,71 @@ entity_category_map <- tibble(
   category = c("people", "organizations", "places")
 )
 
-# Test entity cleanup (deduplication and normalization)
-entities_tbl <- ner_df_clean %>%
-  filter(ent_type %in% keep_types) %>%
-  mutate(
-    entity_id   = row_number(),     # remember each original span
-    orig_entity = text              # save original casing
-  ) %>%
-  unnest_tokens(token, text) %>%
-  anti_join(stop_words, by = c("token" = "word")) %>%
-  group_by(doc_id, ent_type, entity_id, orig_entity) %>%
-  summarise(
-    entity_clean_tokens = list(token),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    token_count = lengths(entity_clean_tokens),
-    entity_clean = map_chr(entity_clean_tokens, ~ str_c(.x, collapse = " ")),
-    entity_clean = str_squish(entity_clean),
-    entity_clean = if_else(
-      str_detect(orig_entity, "[A-Z]{2,}") | str_detect(orig_entity, "[A-Za-z][A-Z]"),
-      orig_entity,                          # keep acronyms/mixed case
-      str_to_title(entity_clean)            # normalize regular names
-    )
-  ) %>%
-  filter(entity_clean != "") %>%
-  distinct(doc_id, ent_type, entity_clean) %>%
-  left_join(entity_category_map, by = c("ent_type" = "entity_type")) %>%
-  group_by(doc_id, category) %>%
-  summarise(
-    entities = list(unique(entity_clean)),   # deduplicated vectors
-    .groups = "drop"
-  )
+# Remove stop words and prepare clean entities for each event
+process_entities <- function(ner_df) {
+  ner_df %>%
+    filter(ent_type %in% keep_types) %>%
+    mutate(
+      entity_id   = row_number(), # Label each event
+      orig_entity = text # Save original text
+    ) %>%
+    unnest_tokens(token, text) %>%
+    anti_join(stop_words, by = c("token" = "word")) %>%
+    group_by(doc_id, ent_type, entity_id, orig_entity) %>%
+    summarise(
+      entity_clean_tokens = list(token), # Get list of clean entities for each event
+      .groups = "drop"
+    ) %>%
+    mutate(
+      entity_clean = map_chr(entity_clean_tokens, ~ str_c(.x, collapse = " ")),
+      entity_clean = str_squish(entity_clean),
+      entity_clean = if_else(
+        str_detect(orig_entity, "[A-Z]{2,}") | str_detect(orig_entity, "[A-Za-z][A-Z]"),
+        orig_entity, # keep acronyms/mixed case
+        str_to_title(entity_clean) # normalize regular names
+      )
+    ) %>%
+    filter(entity_clean != "") %>%
+    distinct(doc_id, ent_type, entity_clean) %>%
+    left_join(entity_category_map, by = c("ent_type" = "entity_type")) %>%
+    group_by(doc_id, category) %>%
+    summarise(
+      entities = list(unique(entity_clean)), # deduplicated vectors
+      .groups = "drop"
+    ) %>% 
+    pivot_wider(names_from = category, values_from = entities) %>% 
+    mutate(across(c(people, organizations, places),
+                  ~ map(.x, ~ if (length(.x) == 0) NA_character_ else .x)))
+}
 
-entities_tbl_wide <- entities_tbl %>% 
-  pivot_wider(names_from = category, values_from = entities)
+# Call function
+entities_tbl <- process_entities(ner_df)
 
+# Remove stop words from extracted noun phrases
+process_nounphrases <- function(np_df) {
+  np_df %>% 
+    unnest_tokens(output = word, input = text) %>% 
+    anti_join(stop_words, by = "word") %>%
+    group_by(doc_id, root_id, start_id, length) %>%  # keys for a phrase
+    summarise(clean_text = str_c(word, collapse = " "),
+              length = n(),
+              .groups = "drop") %>%
+    filter(clean_text != "") %>% 
+    filter(length > 1) %>%
+    mutate(clean_text = str_squish(clean_text)) %>%
+    group_by(doc_id) %>%
+    summarise(noun_phrases = list(unique(clean_text)), .groups = "drop")
+}
 
-# Clean up extracted named entities
-ner_tokens <- ner_df %>% 
-  unnest_tokens(output = word, input = text) %>% 
-  anti_join(stop_words, by = "word")
-
-ner_clean <- ner_tokens %>%
-  group_by(doc_id, start_id, length) %>%  # keys for an entity
-  summarise(clean_text = str_c(word, collapse = " "),
-            length = n(),
-            .groups = "drop")
-
-
-
-
-# Clean up extracted noun phrases
-np_tokens <- np_df %>% 
-  unnest_tokens(output = word, input = text) %>% 
-  anti_join(stop_words, by = "word")
-
-np_clean <- np_tokens %>%
-  group_by(doc_id, root_id, start_id, length) %>%  # keys for a phrase
-  summarise(clean_text = str_c(word, collapse = " "),
-            length = n(),
-            .groups = "drop") %>%
-  filter(clean_text != "") %>% 
-  filter(length > 1)
-
-nounphrases_tbl <- np_clean %>%
-  mutate(clean_text = str_squish(clean_text)) %>%
-  group_by(doc_id) %>%
-  summarise(noun_phrases = list(unique(clean_text)), .groups = "drop")
+# Call function
+nounphrases_tbl <- process_nounphrases(np_df)
 
 # Attach enriched info to combined events for downstream personas / visualizations
 all_events_enriched <- all_events %>%
-  left_join(entities_tbl_wide,   join_by("event_id" == "doc_id")) %>%
+  left_join(entities_tbl, join_by("event_id" == "doc_id")) %>%
   left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
 
 all_events_enriched
-
 ```
 
 ## Natural Language Processing (NLP)
