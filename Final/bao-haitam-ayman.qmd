@@ -7,6 +7,14 @@ editor: visual
 
 ## 
 
+```{r, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,
+                  warning = FALSE,
+                  message = FALSE)
+
+```
+
 ```{r}
 library(dplyr) 
 library(tidyr) 
@@ -19,9 +27,32 @@ library(spacyr)
 library(textdata) 
 library(jsonlite) 
 library(tidytext)
+library(igraph)
+library(ggraph)
+library(gt)
+library(stringr) 
+library(stringi) 
 ```
 
-## *Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite).*
+# Introduction
+
+Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. Young professionals are increasingly reliant on open invitation networking events to connect with individuals and begin forming a robust network around them Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. The volume of events can be somewhat daunting, leaving time constrained young professionals hearing about useful events only after they happen.
+
+### [Our Solution]{.underline}
+
+We plan to limit the amount of time searching for events by scraping major websites containing event ads, and displaying the most relevant events to our end user. The websites used in the development process are:
+
+-   Eventbrite
+
+-   Platform Calgary
+
+-   Edmonton RIN
+
+Utilizing natural language processing techniques, we will score events based on relevance, sentiment, phrases used, and other key matches. If possible, we would also like to give our end user a leg up over the competition, and where possible, we will provide information on potential guests, corporate sponsors, and more. In summary, we want our end user to find the following after using this program:
+
+1.  Top most relevant events given an overall relevance score.
+2.  Descriptive analysis of the key words and phrases that influenced the relevant score.
+3.  Names of people and companies that may potentially attend.
 
 ```{r}
 edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>%
@@ -35,20 +66,27 @@ platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>%
   as_tibble()
 ```
 
-```{r}
-eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
-  fromJSON() %>% 
-  as_tibble()
+```{r,include = FALSE}
+#eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
+ # fromJSON() %>% 
+  #as_tibble()
 ```
 
-***Putting all the information together in 1 formatted table (all_events)***
+# Methodology
+
+The data is wrangled using a javascript web scraper. An example of the key features and a real output are below:
 
 ```{r}
 all_events_raw <- bind_rows(edmontonrin, platformcalgary) %>% 
   dplyr::mutate(event_id = row_number()) %>%
   dplyr::select(event_id, dplyr::everything())
 
+
+all_events_raw[1,]%>%
+  gt::gt()
 ```
+
+\*\* NER EXPLANATION HERE EXPLAINING THE UPDATED FEATURE LIST \*\*
 
 ```{r}
 # Process NER
@@ -178,51 +216,30 @@ all_events_enriched
 
 ```
 
-## *Part 2: NLP Analysis (Ayman)*
+## Natural Language Processing (NLP)
 
-### *Why are we using NLP?*
+The importance of any given event is subjective to the wants and needs of our end user. Through the use of our own lived experiences, we can manage a heuristic response to an event's details to decide whether or not it is relevant. To mimic this, we must define personas, and create lexicons, to measurably compare events to our end user.
 
--   *Generate a precise understanding of the topic of the event.*
+### Why and How to use NLP?
 
--   *It is possible that the most used words are not the main topic of the event.*
+-   *Generating a precise understanding of the topic of the event.*
 
--   *We may find a relevant event, but still may want to understand the central theme.*
+-   Differentiate topics among equally relevant events.
 
--   *We can create criteria by which we can choose top 3 events.*
+-   *Defining criteria by which we can choose relevant events.*
 
-    -   *We can categorize events (i.e. "networking", "seminar", "conference", etc.)*
+-   Visualizing distributions of event relevance, and rationalizing top 3 choices from it.
 
-    -   *Is it free or paid?*
-
-    -   *Likelihood of professionals attending?*
-
-    -   *Is it local? regional? national?*
-
-    -   *Is the event open to all people/professions?*
-
-    -   *And much much more potentially.*
-
--   *Understand the sentiment of the event. Is it positive or negative? Emphasis on Opportunity or Danger/Risks?*
-
-### *How can we use NLP?*
-
--   *We can track how the DoW impacts what sort of event is taking place (12.4.6 Story Through Time)*
-
--   *Using correlation mapping, we can explore how different themes connect to one another, providing graphs to the end user exploring how their key words are explored in the context of the event.*
-
--   *We can create a lexicon for words of interest and assign a sentiment score to each event (based on whichever criteria we deem useful)*
-
-------------------------------------------------------------------------
+We begin by tokenizing each word in all the event descriptions and plotting their overall use to extrapolate information about trending event topics.
 
 ```{r}
-library(stringr) 
-library(stringi) 
-nlp_tokens <- all_events %>%
+
+nlp_tokens <- all_events_raw %>%
   dplyr::select(event_id, description)%>%
   dplyr::filter(!is.na(description))%>%
-  tidytext::unnest_tokens(output = word, input = description, token = "ngrams", n = 3)
+  tidytext::unnest_tokens(output = word, input = description, token = "ngrams", n = 2)
 
-nlp_token_1 <- all_events %>%
+nlp_token_1 <- all_events_raw %>%
   dplyr::select(event_id, description)%>%
   dplyr::filter(!is.na(description))%>%
   tidytext::unnest_tokens(output = word, input = description)%>%
@@ -236,11 +253,8 @@ nlp_token_1 <- all_events %>%
 
 nlp_tokens <- nlp_tokens %>% 
   tidyr::separate_wider_delim(word, delim = " ", names = c("item1",
-                                                           "item2",
-                                                           "item3"
+                                                           "item2"
                                                            ))
-  
-  
 
 # for loop to remove stop_words
 for(i in 2:nrow(nlp_tokens)){
@@ -256,22 +270,98 @@ for(i in 2:nrow(nlp_tokens)){
   }
 }
 
-
-
-
-
 nlp_tokens <- nlp_tokens %>% 
   tidyr::unite(item1, 2:length(nlp_tokens),  sep = " ")%>%
   dplyr::transmute(event_id, phrase = item1)
 
 nlp_tokens$phrase <- nlp_tokens$phrase %>% gsub("^\\s+|\\s+$", "", .)
 
-nlp_tokens <- nlp_tokens %>% dplyr::filter(stri_count_words(phrase) >= 3) %>% unique()
+nlp_tokens <- nlp_tokens %>% dplyr::filter(stri_count_words(phrase) >= 2) %>% unique()
+
+
+rbind(
+
+(nlp_tokens%>%
+  count(phrase, name = "count")%>%
+   dplyr::rename("token" = "phrase")%>%dplyr::mutate(type = "Phrase")%>%
+   dplyr::arrange(desc(.))%>% dplyr::slice_head(n = 15)),
+(nlp_token_1%>%
+   count(word, name = "count")%>%
+   dplyr::rename("token" = "word")%>%dplyr::mutate(type = "word")%>%
+   dplyr::arrange(desc(.))%>% dplyr::slice_head(n=15))
+
+)%>%
+  ggplot2::ggplot(aes(x = reorder(token, count), y = count, fill = token))+
+  geom_col()+
+  theme(legend.position = "none",
+        panel.grid = element_line(colour = "lightgrey", linewidth = 0.2),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
+  coord_flip()+
+  facet_grid(.~type)+
+  labs(x = "Tokens", y = "Mentions")
 ```
 
-*Evaluate the entire above chunk for nlp_tokens, which will be the base for further analysis*
+We note that there are multiple phrases that are potentially counted repeatedly within the same context. We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult. To both side-step this problem, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends.
 
-### *Lexicon(s) Creation \*\* Requires Updating*
+```{r}
+
+
+
+rbind(
+(np_clean%>%
+  count(clean_text, name = "count")%>%
+   dplyr::rename("token" = "clean_text")%>%dplyr::mutate(type = "Noun_Phrase")%>%
+   dplyr::arrange(desc(.))%>% dplyr::slice_head(n = 15)),
+(nlp_token_1%>%
+   count(word, name = "count")%>%
+   dplyr::rename("token" = "word")%>%dplyr::mutate(type = "word")%>%
+   dplyr::arrange(desc(.))%>% dplyr::slice_head(n=15))
+
+)%>%
+  ggplot2::ggplot(aes(x = reorder(token, count), y = count, fill = token))+
+  geom_col()+
+  theme(legend.position = "none",
+        panel.grid = element_line(colour = "lightgrey", linewidth = 0.2),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
+  coord_flip()+
+  facet_grid(.~type)+
+  labs(x = "Tokens", y = "Mentions")
+
+```
+
+At a high level, the information provided by the above graphics can inform the end user on trending topics in their area. What it does not do is materially move our analysis closer to pinpointing three relevant events. In order to make real headwinds, we cannot divorce our statistics from group level assignment.
+
+A different high level view of relevant phrases is provided by the below graph:
+
+```{r}
+
+np_igraph <- np_clean%>%
+  dplyr::select(doc_id, clean_text)%>%
+  igraph::graph_from_data_frame()
+  
+V(np_igraph)$type <- bipartite_mapping(np_igraph)$type
+  
+np_igraph %>%  
+  ggraph(layout = "nicely")+
+  geom_edge_link(show.legend = FALSE)+
+  geom_node_point(aes(colour = type), size = 5)+
+  geom_node_text(aes(label = name),
+                 size = 4,
+                 vjust = 1.3,
+                 hjust = 0.5)+
+  theme(legend.position = "none",
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black"))
+
+```
+
+Given the above graphic, you can extract multiple key takeaways about the event landscape you are a part of. High levels of fragmentation would signify an overall lack of synchronicity among events. A more interconnected cobweb of key phrases and events would support the belief that there is a dominant trend.
+
+We can observe some clustering of events allowing us to establish some inter-connectivity if any.
 
 ```{r}
 networking_words <- list(
@@ -345,16 +435,9 @@ persona_entrepreneur <- list(
 )
 ```
 
+### Persona and Lexicon Matching
 
-### *NEW IDEAS:*
-
-1.  *I want to know which key words are being used in which events. I can potentially make a faceted graph showing keyword use in descriptions. –\> this lends some weight to understanding the specific topic of each event.*
-
-### [*Outputs:*]{.underline}
-
-### *Bar chart where x axis is count of persona matches and y axis is event id.*
-
-### *nlp_fit, a tibble with event_id, non-stop words, and \# of mentions in description*
+To score events by relevance, we match keywords in pre-defined lexicons containing preferred language, with each event's description. Below is a visual example of the first step in our machine learning workflow.
 
 ```{r}
 
@@ -371,7 +454,7 @@ nlp_token_1$Contains[i] <- grepl(nlp_token_1[i,2], paste(topic, collapse = ""))
 }
 
 nlp_fit <- nlp_token_1 %>%
-  dplyr::filter(Contains == "FALSE")%>%
+  dplyr::filter(Contains == "TRUE")%>%
   dplyr::group_by(event_id)%>%
   dplyr::count(word, name = "Matches")%>%
   dplyr::arrange(desc(Matches))
@@ -381,12 +464,69 @@ nlp_fit %>%
   dplyr::arrange(desc(Matches))%>% dplyr::slice_head(n = 10)%>%
   ggplot2::ggplot(aes(x = Matches, y = reorder(event_id, Matches), fill = Matches))+
   geom_col()+
-  theme(panel.background = element_blank(), legend.position = "none")+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(colour = "lightgrey"),
+        legend.position = "none")+
   labs(x = "Matches", y = "Event ID")
 
 
 
 
+```
+
+At its core, we count matches between defined criteria and event descriptions. In the above example, taking count as score, the top ranking event will thus be the recommended to our end user. This is a simplified example.
+
+### Bi-gram Matching
+
+Expanding from the uni-gram analysis, phrases can provide extra relevance, especially if repeated.
+
+```{r}
+
+
+np_pairwise <- np_clean %>%
+  dplyr::select(doc_id, clean_text)%>%
+  widyr::pairwise_cor(
+    item = clean_text,
+    feature = doc_id,
+    sort = T,
+    upper = FALSE)%>%
+  dplyr::filter(correlation > .7)
+
+
+
+
+  persona1 <- persona_finance_student
+  
+  np_pairwise$Contains = ""
+  
+  
+  for(j in 1:length(persona1$keywords)){
+
+    np_pairwise$Contains <-grepl(persona1$keywords[j], 
+                                    np_pairwise$item1,
+                                    ignore.case = TRUE)
+  
+    
+    
+  }
+
+
+
+  
+igraph::graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 vjust = 1,
+                 hjust = 1) +
+  theme_void()
+
+
+
+
+np_pairwise
 ```
 
 ```{r}
@@ -438,6 +578,12 @@ nlp_type_scores <- nlp_type%>%
 
 ```
 
+-   extract in multiple ways
+
+-   if u extract and match to unigrams, those should indicate the terms that are used often. you can get a measure of relevance from unigram matches directly. (what we did)
+
+-   with phrases, usually its very deliberate, could show extra relevance.
+
 ```{r}
 
 
@@ -445,11 +591,6 @@ event_words <- nlp_type %>% dplyr::filter(Contains != 0)%>%
   dplyr::select(event_id)%>% left_join(., nlp_token_1, by = "event_id")%>%dplyr::group_by(event_id)%>%
   dplyr::count(word, name = "Instances")%>%
   dplyr::arrange(desc(Instances))
-
-
-colors <- rainbow(17, alpha = .5)
-
-colors2 <- apply(event_words[,2:3], 1, FUN = function(x) colors)
 
 
 
@@ -486,7 +627,6 @@ title_tokens <- all_events %>%
   anti_join(tidytext::stop_words, by = "word")
 
 ```
-
 
 ```{r}
 # DONE MATCH DESC SYNC WITH NLP
@@ -695,7 +835,6 @@ get_top_events <- function(events_scored, n = 3) {
 }
 ```
 
-
 ```{r}
 events_features_1 <- build_event_features(
   all_events,
@@ -711,8 +850,6 @@ top3_events_1
 
 ```
 
-
-
 ```{r}
 events_features_2 <- build_event_features(
   all_events,
@@ -726,8 +863,6 @@ events_scored_2 <- score_event_relevance(events_features_2)
 top3_events_2 <- get_top_events(events_scored_2, 3)
 top3_events_2
 ```
-
-
 
 ```{r}
 events_features_3 <- build_event_features(
@@ -743,49 +878,11 @@ top3_events_3 <- get_top_events(events_scored_3, 3)
 top3_events_3
 ```
 
-
-
-What Next: 
+What Next:
 
 Rough Structure of Report. Section where each visualization will belong.
 
-
-
 Report:
 
-- Intro: Framing the Problem/hypothesis
-  - Problems with the job search, and proposal 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+-   Intro: Framing the Problem/hypothesis
+    -   Problems with the job search, and proposal
