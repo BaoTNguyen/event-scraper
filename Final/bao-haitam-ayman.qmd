@@ -36,7 +36,7 @@ library(stringi)
 
 # Introduction
 
-Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. Young professionals are increasingly reliant on open invitation networking events to connect with individuals and begin forming a robust network around them Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. The volume of events can be somewhat daunting, leaving time constrained young professionals hearing about useful events only after they happen.
+Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. The typical student may send out numerous cold emails each week, with only a small fraction eventually translating into some form of dialogue. To skip the hassle, and develop meaningful relationships, young professionals are increasingly reliant on open invitation networking events to connect in-person and begin forming robust networks around them. Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. Unfortunately, the sheer volume of events can be somewhat daunting to analyze, leaving time constrained young professionals hearing about useful events only after they happen.
 
 ### [Our Solution]{.underline}
 
@@ -74,7 +74,7 @@ platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>%
 
 # Methodology
 
-The data is wrangled using a javascript web scraper. An example of the key features and a real output are below:
+The data is wrangled using a javascript web scraper. Key features are extracted such as Title, Description, and more. An example output is provided here:
 
 ```{r}
 all_events_raw <- bind_rows(edmontonrin, platformcalgary) %>% 
@@ -203,12 +203,12 @@ all_events_enriched <- all_events %>%
   left_join(entities_tbl, join_by("event_id" == "doc_id")) %>%
   left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
 
-all_events_enriched
+
 ```
 
 ## Natural Language Processing (NLP)
 
-The importance of any given event is subjective to the wants and needs of our end user. Through the use of our own lived experiences, we can manage a heuristic response to an event's details to decide whether or not it is relevant. To mimic this, we must define personas, and create lexicons, to measurably compare events to our end user.
+The importance of any given event is subjective to the wants and needs of our end user. When people actually read detailed descriptions they typically converge on a heuristic response, given a mixture of multiple different factors, to decide whether or not it is relevant. To mimic this, we must define personas, and create lexicons, to measurably compare events to our end users preferences.
 
 ### Why and How to use NLP?
 
@@ -293,11 +293,38 @@ rbind(
   labs(x = "Tokens", y = "Mentions")
 ```
 
-We note that there are multiple phrases that are potentially counted repeatedly within the same context. We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult. To both side-step this problem, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends.
+We note that there are multiple phrases that are potentially counted repeatedly within the same context. This means that two phrases are different by only one word, and because of that, each word is shown twice in our list of phrase tokens. This happens how?
+
+Suppose we are splitting a text into bi-grams (tokenizing each pair of words). The text is :
+
+"The principle is calling us!"
+
+We will get the following word pairs.
+
+-   "The principle"
+
+-   "principle is"
+
+-   "is calling"
+
+-   "calling us!"
+
+Analyzing these sorts of bi-grams can yield misleading results without refinement.
+
+We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult. To side-step both these problems, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends.
 
 ```{r}
 
-
+np_clean <- np_df %>% 
+  unnest_tokens(output = word, input = text) %>% 
+  anti_join(stop_words, by = "word") %>%
+  group_by(doc_id, root_id, start_id, length) %>%  # keys for a phrase
+  summarise(clean_text = str_c(word, collapse = " "),
+              length = n(),
+              .groups = "drop") %>%
+  filter(clean_text != "") %>% 
+  filter(length > 1) %>%
+  mutate(clean_text = str_squish(clean_text))
 
 rbind(
 (np_clean%>%
@@ -351,7 +378,7 @@ np_igraph %>%
 
 Given the above graphic, you can extract multiple key takeaways about the event landscape you are a part of. High levels of fragmentation would signify an overall lack of synchronicity among events. A more interconnected cobweb of key phrases and events would support the belief that there is a dominant trend.
 
-We can observe some clustering of events allowing us to establish some inter-connectivity if any.
+We can observe some clustering of events allowing us to establish some inter-connectivity if any. We can further refine our uni-gram and bi-gram matching to include only events with relevant words. We utilize lexicons such as the one below as a comparative list.
 
 ```{r}
 networking_words <- list(
@@ -382,6 +409,8 @@ persona_finance_student <- list(
   
   event_types = c("networking", "career fair", "seminar")
 )
+
+persona_finance_student
 ```
 
 ```{r}
@@ -389,7 +418,7 @@ persona_tech_student <- list(
   
   keywords = c(
     "tech", "technology", "software", "developer", "coding",
-    "programming", "data", "python", "r", "cloud", "app",
+    "programming", "data", "python", "cloud", "app",
     "machine", "learning", "ai", "intelligence", "artificial"
   ),
   
@@ -464,7 +493,7 @@ nlp_fit %>%
 
 ```
 
-At its core, we count matches between defined criteria and event descriptions. In the above example, taking count as score, the top ranking event will thus be the recommended to our end user. This is a simplified example.
+At its core, we count matches between defined criteria and event descriptions. In the above example, taking count as score, the top ranking event will thus be recommended to our end user. This is a simplified example.
 
 ### Bi-gram Matching
 
@@ -473,50 +502,83 @@ Expanding from the uni-gram analysis, phrases can provide extra relevance, espec
 ```{r}
 
 
-np_pairwise <- np_clean %>%
+persona1 <- persona_tech_student
+
+
+  
+np_clean$Contains = ""
+  
+for(i in 1:nrow(np_clean)){  
+
+  for(j in 1:length(persona1$keywords)){
+    
+      np_clean$Contains[i] <-grepl(persona1$keywords[j], 
+                                    np_clean$clean_text[i],
+                                    ignore.case = TRUE)
+  
+      if(np_clean$Contains[i] == TRUE){
+        
+        break
+        
+      } else{
+        
+        next
+        
+      }
+  }
+}
+
+
+
+
+np_graph_hold <- np_clean  %>% dplyr::filter(Contains != "FALSE")%>%
+  dplyr::select(doc_id, clean_text)%>%
+  igraph::graph_from_data_frame()
+
+V(np_graph_hold)$type <- bipartite_mapping(np_graph_hold)$type
+
+np_graph_hold%>%
+  ggraph(layout = "fr") +
+  geom_edge_link(show.legend = FALSE) +
+  geom_node_point(aes(color = type), size = 5) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 vjust = 1.5,
+                 hjust = .4) +
+  theme(panel.background = element_blank(),
+        legend.position = "none")+
+  labs(title = "Phrases in Relevant Events")
+
+
+
+
+np_holder <- np_clean %>%
+  dplyr::filter(Contains != "FALSE")
+
+
+
+
+
+np_clean %>%
+  dplyr::filter(doc_id %in% np_holder$doc_id)%>%
   dplyr::select(doc_id, clean_text)%>%
   widyr::pairwise_cor(
     item = clean_text,
     feature = doc_id,
     sort = T,
     upper = FALSE)%>%
-  dplyr::filter(correlation > .7)
-
-
-
-
-  persona1 <- persona_finance_student
-  
-  np_pairwise$Contains = ""
-  
-  
-  for(j in 1:length(persona1$keywords)){
-
-    np_pairwise$Contains <-grepl(persona1$keywords[j], 
-                                    np_pairwise$item1,
-                                    ignore.case = TRUE)
-  
-    
-    
-  }
-
-
-
-  
-igraph::graph_from_data_frame() %>%
-  ggraph(layout = "fr") +
+  dplyr::filter(correlation > .7)%>% 
+  igraph::graph_from_data_frame() %>%
+  ggraph(layout = "grid") +
   geom_edge_link(show.legend = FALSE) +
-  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_point(color = "orange", size = 5) +
   geom_node_text(aes(label = name),
                  size = 3,
-                 vjust = 1,
-                 hjust = 1) +
-  theme_void()
+                 vjust = 1.5,
+                 hjust = .5) +
+  theme_void()+
+  labs(title = "Correlated Phrases in Relevant Events")
 
-
-
-
-np_pairwise
 ```
 
 ```{r}
