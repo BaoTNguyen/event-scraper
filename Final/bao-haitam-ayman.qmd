@@ -25,19 +25,19 @@ library(jsonlite)
 ```{r}
 edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>%
   fromJSON() %>%
-  as_tibble()}
+  as_tibble()
 ```
 
 ```{r}
 platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>%
   fromJSON() %>% 
-  as_tibble()}
+  as_tibble()
 ```
 
 ```{r}
 eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
   fromJSON() %>% 
-  as_tibble()}
+  as_tibble()
 ```
 
 ***Putting all the information together in 1 formatted table (all_events)***
