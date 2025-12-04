@@ -16,6 +16,7 @@ library(tidyverse)
 library(spacyr)
 library(textdata)
 library(jsonlite)
+
 ```
 
 ## *Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite).*
@@ -206,16 +207,24 @@ nlp_tokens %>%
 
 # new idea #1
 
-fin_person <- c(
+persona_finance_student <- list(
+  
+  keywords = c(
     "finance", "financial", "investment", "investing", "markets",
     "economics", "trading", "derivatives", "valuation", "analytics",
     "data", "economy", "portfolio", "risk", "venture", "credit", "debt",
-    "banking", "capital", "wealth", "equity", "fund", "money", "business",
-    "businesses"
-  )
+    "banking", "capital", "wealth", "equity", "fund", "money"
+  ),
+  
+  priority_keywords = c("finance", "internship", "trading", "analyst", "mentorship", "professional"),
+  
+  locations = c("virtual", "online"),
+  
+  event_types = c("networking", "career fair", "seminar")
+)
 
 
-topic <- fin_person # choose your topic of interest here
+topic <- persona_finance_student$keywords # choose your topic of interest here
 
 nlp_token_1$Contains <- "" # initializing the contains column 
 
@@ -576,22 +585,7 @@ get_top_events <- function(events_scored, n = 3) {
 }
 ```
 
-```{r}
-persona_finance_student <- list(
-  
-  keywords = c(
-    "finance", "financial", "investment", "investing", "markets",
-    "economics", "trading", "derivatives", "valuation", "analytics",
-    "data", "economy", "portfolio", "risk", "venture", "credit", "debt",
-    "banking", "capital", "wealth", "equity", "fund", "money"
-  ),
-  
-  priority_keywords = c("finance", "internship", "trading", "analyst", "mentorship", "professional"),
-  
-  locations = c("virtual", "online"),
-  
-  event_types = c("networking", "career fair", "seminar")
-)
+```         
 ```
 
 ```{r}
