@@ -18,10 +18,7 @@ library(tidyverse)
 library(spacyr) 
 library(textdata) 
 library(jsonlite) 
-<<<<<<< Updated upstream
-=======
 library(tidytext)
->>>>>>> Stashed changes
 ```
 
 ## *Part 1: Scraping the data from 3 event websites (EdmontonRIN, PlatformCalgary, and EventBrite).*
@@ -47,11 +44,7 @@ eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
 ***Putting all the information together in 1 formatted table (all_events)***
 
 ```{r}
-<<<<<<< Updated upstream
-all_events_raw <- bind_rows(edmontonrin, platformcalgary, eventbrite) %>% 
-=======
 all_events_raw <- bind_rows(edmontonrin, platformcalgary) %>% 
->>>>>>> Stashed changes
   dplyr::mutate(event_id = row_number()) %>%
   dplyr::select(event_id, dplyr::everything())
 
@@ -74,13 +67,8 @@ all_events <- all_events_raw %>%
 
 # Initialize spaCy
 spacy_install()
-<<<<<<< Updated upstream
-spacy_download_langmodel("en_core_web_trf")
-spacy_initialize(model = "en_core_web_trf")
-=======
 spacy_download_langmodel("en_core_web_sm")
 spacy_initialize(model = "en_core_web_sm")
->>>>>>> Stashed changes
 
 # Run NER + noun phrases across all descriptions
 ner_df <- spacy_extract_entity(
@@ -183,11 +171,7 @@ nounphrases_tbl <- np_clean %>%
 
 # Attach enriched info to combined events for downstream personas / visualizations
 all_events_enriched <- all_events %>%
-<<<<<<< Updated upstream
-  left_join(entities_tbl_long,   join_by("event_id" == "doc_id")) %>%
-=======
   left_join(entities_tbl_wide,   join_by("event_id" == "doc_id")) %>%
->>>>>>> Stashed changes
   left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
 
 all_events_enriched
@@ -303,10 +287,6 @@ networking_words <- list(
 ```
 
 ```{r}
-<<<<<<< Updated upstream
-# Finance persona
-=======
->>>>>>> Stashed changes
 persona_finance_student <- list(
   
   keywords = c(
@@ -322,8 +302,6 @@ persona_finance_student <- list(
   
   event_types = c("networking", "career fair", "seminar")
 )
-<<<<<<< Updated upstream
-=======
 ```
 
 ```{r}
@@ -379,7 +357,6 @@ persona_entrepreneur <- list(
 ### *nlp_fit, a tibble with event_id, non-stop words, and \# of mentions in description*
 
 ```{r}
->>>>>>> Stashed changes
 
 
 topic <- persona_finance_student$keywords # choose your topic of interest here
@@ -387,10 +364,6 @@ topic <- persona_finance_student$keywords # choose your topic of interest here
 nlp_token_1$Contains <- "" # initializing the contains column 
 
 
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
 for(i in 1:nrow(nlp_token_1)){
 
 nlp_token_1$Contains[i] <- grepl(nlp_token_1[i,2], paste(topic, collapse = ""))
@@ -411,138 +384,6 @@ nlp_fit %>%
   theme(panel.background = element_blank(), legend.position = "none")+
   labs(x = "Matches", y = "Event ID")
 
-<<<<<<< Updated upstream
-```
-
-### *Feature Engineering / Visualization as we go*
-
-### [*Outputs:*]{.underline}
-
-### *iGraph connecting unique event id's in column 1 with all corresponding phrases of interest in column2*
-
-`{r} library(ggraph) library(widyr)  interest <- "tech"  nlp_tokens %>%   dplyr::filter(str_detect(phrase, interest))%>%   igraph::graph_from_data_frame()%>%   ggraph(layout = "fr")+   geom_edge_link(show.legend = FALSE)+   geom_node_point(colour = "orange", size = 5)+   geom_node_text(aes(label = name),                  size = 4,                  vjust = 1.3,                  hjust = 0.9)+   theme_void()}`
-
-### Generalized –\> Yes
-
-### *NEW IDEAS:*
-
-1.  *I want to know which key words are being used in which events. I can potentially make a faceted graph showing keyword use in descriptions. –\> this lends some weight to understanding the specific topic of each event.*
-
-### [*Outputs:*]{.underline}
-
-### *Bar chart where x axis is count of persona matches and y axis is event id.*
-
-### *nlp_fit, a tibble with event_id, non-stop words, and \# of mentions in description*
-
-`{r}  # new idea #1  fin_person <- c(     "finance", "financial", "investment", "investing", "markets",     "economics", "trading", "derivatives", "valuation", "analytics",     "data", "economy", "portfolio", "risk", "venture", "credit", "debt",     "banking", "capital", "wealth", "equity", "fund", "money", "business",     "businesses"   )   topic <- fin_person # choose your topic of interest here  nlp_token_1$Contains <- "" # initializing the contains column     for(i in 1:nrow(nlp_token_1)){  nlp_token_1$Contains[i] <- grepl(nlp_token_1[i,2], paste(topic, collapse = ""))  }  nlp_fit <- nlp_token_1 %>%   dplyr::filter(Contains == "FALSE")%>%   dplyr::group_by(event_id)%>%   dplyr::count(word, name = "Matches")%>%   dplyr::arrange(desc(Matches))  nlp_fit %>%   dplyr::group_by(event_id)%>% dplyr::summarise(Matches = sum(Matches))%>%   dplyr::arrange(desc(Matches))%>% dplyr::slice_head(n = 10)%>%   ggplot2::ggplot(aes(x = Matches, y = reorder(event_id, Matches), fill = Matches))+   geom_col()+   theme(panel.background = element_blank(), legend.position = "none")+   labs(x = "Matches", y = "Event ID")}`
-
-### Generalized? –\> Yes, but topic, interest, etc can and should be initialized at the top of the code for practical purposes.
-
-### *Adding Event Type into NLPFIT*
-
-*Workflow:*
-
--   *Desired output is a wide tibble with event id in one column, total networking score in one column, and total seminar score in another column.*
-
--   *Imagining a visualization output with a Cartesian plane which could be cool and useful.*
-
--   *Inputs are:*
-
-    -   *a lexicon data frame with two columns, Type and Lexicon (Words)*
-
-    -   *nlpfit with three columns, event_id, word, and matches (to persona words)*
-
-### [*Outputs:*]{.underline}
-
-### *Column chart where y axis is Event Type Score and x axis is event id.*
-
-### *nlp_type, a wide tibble with event ids, words, and integer logicals for whether the word is in persona words, networking words, and/or seminar words*
-
-### *nlp_type_scores, a wide tibble with summary for each event id with at least one matching word, including the sum of persona words, networking words, and/or seminar words*
-
-`{r}  # Attempting same logic as matches first, **no use for lexicon dataframe #Initializing dataframe (this is not AI btw)  nlp_type <- nlp_token_1 nlp_type$Networking <- "" nlp_type$Seminar <- ""   for(i in 1:nrow(nlp_type)){  nlp_type$Networking[i] <- grepl(nlp_type[i,2], paste(networking_words, collapse = ""))   }  nlp_type <- nlp_type %>%   dplyr::mutate(across(3:ncol(nlp_type), ~ as.integer(as.logical(.))))   nlp_type %>%   tidyr::pivot_longer(cols = c(4:ncol(nlp_type)),                       names_to = "Type",                       values_to = "Score")%>%   dplyr::filter(Score != 0)%>%   ggplot2::ggplot(aes(x = as.character(event_id),                        y = Score,                       fill = Score))+   geom_col()+   theme(panel.grid.minor.x = element_blank(),         panel.grid.major.x = element_blank(),         panel.background = element_rect(fill = "lightgrey"),         legend.position = "none")+   labs(title = "Event Type Scores",        )+   coord_flip()      # Not generalized so far nlp_type_scores <- nlp_type%>%   dplyr::group_by(event_id)%>%   dplyr::summarise(Network_Score = sum(Networking),                    Seminar_Score = sum(Seminar),                    Matches = sum(Contains))%>%   dplyr::filter(Matches == 1)}`
-
-### Generalized –\> No, best case this should be able to create a wide data frame with a dynamic \# of event types OR have more event types and sacrifice having dynamic flow.
-
-### New Ideas:
-
--   Find words outside of our lexicon searches that are highly repeated and distinguish them as potential unrecognized event types
-
--   Print in console top 3 events and why they match the persona. \*\* USE THIS\*\*
-
--   Perhaps a new lexicon of words to avoid? A meter of suspicion perhaps?
-
--   Trending words in descriptions of interest.
-
-### Lets make a workflow that finds trending words in descriptions of interest.
-
-How:
-
--   Base descriptions of interest based on simple criteria (must have one match to persona, filter NLP type for contains != 0, words are not specific to persona or interest, just in events of interest previously defined on those other criteria.)
-
--   left join nlp_token_1 to data frame by event id (why not ngram \>1 ? Because how do you choose ngrams? and if you do ngrams \>1, you will get repeat phrases that add no valuable context, also you likely will not get matching phrases as you will get with keywords used.)
-
--   count words and summarize.
-
-### *Output: tibble containing only events that contain atleast one word matching persona, and top words mentioned in aggregate of descriptions, aka "non persona key words"*
-
-`{r}   event_words <- nlp_type %>% dplyr::filter(Contains != 0)%>%   dplyr::select(event_id)%>% left_join(., nlp_token_1, by = "event_id")%>%   dplyr::select(word)%>% dplyr::count(word, name = "Instances")%>%   dplyr::arrange(desc(Instances))}`
-
-### Dependencies:
-
--   all_events –\> nlp_token1 & nlp_tokens
-
-    -   nlp_token_1 –\> nlp_fit & nlp_type
-
-        -   nlp_type –\> nlp_type_scores & event_scores
-
-Importance: all_events –\> nlp_token_1 –\> nlp_type –\> everything else\
-\
-\
-Ideas:
-
--   igraph:
-
-    -   Look for a way to improve the visual itself and how its displayed. There is more you can show – perhaps base the igraph on events were already interested in, and create the igraph based on nlp_token_1, and base the size of each node on the count of times each word is used. Also potentially change event id's to titles. (more of an end product)
-
-    -   After –\> create a bigram igraph to look for more specific phrases.
-
--   Differentiating between different lexicons - We are mainly interested in networking, so we can have the lexicon completely related to networking so it takes less time, and simplifies workflow. So essentially just create a "networking score".
-
--   Connecting NLP to ML: most ML functions pull from persona's Haitam made.
-
-## *Part 3: Model to output the top 3 most relevant events for a given persona (Haitam)*
-
-*Creating tokens for each word that appears in both the title and description of an event. The key idea is to use these tokens and compare them to an individuals "preferences" or "keywords" to determine if there is a match. More matched words leads the model to suggesting which events would be the best fit.*
-
-*Can make adjustments to this after doing the NLP analysis.*
-
-`{r} desc_tokens <- all_events %>%   select(event_id, description) %>%   filter(!is.na(description)) %>%   tidytext::unnest_tokens(output = word, input = description) %>%   anti_join(tidytext::stop_words)  title_tokens <- all_events %>%   select(event_id, title) %>%   filter(!is.na(title)) %>%   tidytext::unnest_tokens(output = word, input = title) %>%   anti_join(tidytext::stop_words, by = "word")}`
-
-`{r} # DONE MATCH DESC SYNC WITH NLP match_desc <- function(tokens, persona) {     tokens$Contains <- "" # initializing the contains column     for(i in 1:nrow(tokens)){      tokens$Contains[i] <- grepl(tokens[i,2], paste(persona, collapse = ""))      } # counting each instance per event that a persona word matches  tokens %>%   filter(Contains != "FALSE") %>%   select(event_id)%>%   count(event_id, name = "Desc_Matches")    }  #__________________________________________________________________________________ # DONE MATCH TITLE SYNC WITH NLP match_title <- function(tokens, persona) {    tokens$Contains <- "" # initializing the contains column     for(i in 1:nrow(tokens)){      tokens$Contains[i] <- grepl(tokens[i,2], paste(persona, collapse = ""))      }  # counting each instance per event title that a persona word matches  tokens %>%   filter(Contains != "FALSE") %>%   select(event_id)%>%   count(event_id, name = "Title_Matches") }  #__________________________________________________________________________________  event_sentiment_key <- function(tokens, lexicon) {  tokens$Contains <- ""       for(i in 1:nrow(tokens)){      tokens$Contains[i] <- grepl(tokens[i,2], paste(lexicon$keywords,                                                         collapse = ""))      }    tokens %>%   filter(Contains != "FALSE") %>%   select(event_id)%>%   count(event_id, name = "Sentiment_Key_Matches")   }  #__________________________________________________________________________________  event_sentiment_other <- function(tokens, lexicon) {  tokens$Contains <- ""       for(i in 1:nrow(tokens)){      tokens$Contains[i] <- grepl(tokens[i,2], paste(lexicon$others,                                                         collapse = ""))      }    tokens %>%   filter(Contains != "FALSE") %>%   select(event_id)%>%   count(event_id, name = "Sentiment_Other_Matches")  }  #__________________________________________________________________________________   match_location <- function(events, persona) {   events %>%     mutate(       location_lower = tolower(location),       Location_Matches = if_else(         str_detect(location_lower, str_c(persona$locations, collapse = "|")),         1, 0, missing = 0)) %>%     select(event_id, Location_Matches) }   match_type <- function(events, persona) {   events %>%     mutate(       desc_lower = tolower(description),       Type_Matches = if_else(         str_detect(desc_lower, str_c(persona$event_types, collapse = "|")),         1L, 0L, missing = 0L)) %>%     select(event_id, Type_Matches) }`
-
-`{r} build_event_features <- function(all_events, desc_tokens, title_tokens,                                   persona, networking_words) {      desc_hits_tbl     <- match_desc(desc_tokens, persona)   title_hits_tbl    <- match_title(title_tokens, persona)   sentiment_key_tbl <- event_sentiment_key(desc_tokens, networking_words)   sentiment_other_tbl <- event_sentiment_other(desc_tokens, networking_words)   loc_match_tbl     <- match_location(all_events, persona)   type_match_tbl    <- match_type(all_events, persona)      all_events %>%     left_join(desc_hits_tbl,     by = "event_id") %>%     left_join(title_hits_tbl, by = "event_id") %>%     left_join(sentiment_key_tbl,    by = "event_id") %>%     left_join(sentiment_other_tbl,     by = "event_id") %>%     left_join(loc_match_tbl,     by = "event_id") %>%     left_join(type_match_tbl,    by = "event_id") %>%     mutate(       Desc_Matches          = replace_na(Desc_Matches, 0),       Title_Matches         = replace_na(Title_Matches, 0),       Sentiment_Key_Matches       = replace_na(Sentiment_Key_Matches, 0),       Sentiment_Other_Matches       = replace_na(Sentiment_Other_Matches, 0),       Location_Matches      = replace_na(Location_Matches, 0),       Type_Matches          = replace_na(Type_Matches, 0)     ) }`
-
-`{r} score_event_relevance <- function(events_features) {      scored <- events_features %>%     mutate(       raw_score =         1.0 * Desc_Matches +         1.5 * Title_Matches +         1.5 * Sentiment_Key_Matches +         0.2 * Sentiment_Other_Matches +         1.0 * Location_Matches +         1.0 * Type_Matches     )      min_val <- min(scored$raw_score, na.rm = TRUE)   max_val <- max(scored$raw_score, na.rm = TRUE)      scored %>%     mutate(relevance_score = round(1 + 9 * ((raw_score - min_val) / (max_val - min_val)), 2)) %>%          arrange(desc(relevance_score)) }`
-
-`{r} get_top_events <- function(events_scored, n = 3) {   events_scored %>%     slice_head(n = n) %>%     select(       title,       date,       start_time,       end_time,       location,       description,       event_url,       relevance_score     ) }`
-
-`{r} persona_finance_student <- list(      keywords = c(     "finance", "financial", "investment", "investing", "markets",     "economics", "trading", "derivatives", "valuation", "analytics",     "data", "economy", "portfolio", "risk", "venture", "credit", "debt",     "banking", "capital", "wealth", "equity", "fund", "money"   ),      priority_keywords = c("finance", "internship", "trading", "analyst", "mentorship", "professional"),      locations = c("virtual", "online"),      event_types = c("networking", "career fair", "seminar") )}`
-
-`{r} persona_tech_student <- list(      keywords = c(     "tech", "technology", "software", "developer", "coding",     "programming", "data", "python", "r", "cloud", "app",     "machine", "learning", "ai", "intelligence", "artificial"   ),      priority_keywords = c(     "hackathon", "developer", "internship", "programming"   ),      locations = c("calgary"),      event_types = c("workshop", "webinar", "hackathon") )}`
-
-`{r} persona_entrepreneur <- list(      keywords = c(     "entrepreneur", "startup", "business", "innovation",     "pitch", "founder", "funding", "capital", "growth", "strategy",     "marketing", "strategy", "leadership", "sales", "money", "sales"   ),      priority_keywords = c(     "sales", "pitch", "startup", "entrepreneur", "mentor"   ),      locations = c("virtual", "online"),      event_types = c(     "networking", "pitch", "seminar"   ) )}`
-
-`{r} events_features_1 <- build_event_features(   all_events,   desc_tokens,   title_tokens,   persona_finance_student,   networking_words )  events_scored_1 <- score_event_relevance(events_features_1) top3_events_1 <- get_top_events(events_scored_1, 3) top3_events_1}`
-
-`{r} events_features_2 <- build_event_features(   all_events,   desc_tokens,   title_tokens,   persona_tech_student )  events_scored_2 <- score_event_relevance(events_features_2) top3_events_2 <- get_top_events(events_scored_2, 3) top3_events_2}`
-
-`{r} events_features_3 <- build_event_features(   all_events,   desc_tokens,   title_tokens,   persona_entrepreneur )  events_scored_3 <- score_event_relevance(events_features_3) top3_events_3 <- get_top_events(events_scored_3, 3) top3_events_3}`
-
-*Part 3: NER Analysis (Bao)*
-
-`{r} # Perform NER on most relevant events spacy_install() spacy_initialize(model = "en_core_web_sm")  ner_people <- spacy_extract_entity(top3_events_2$description,   output = "list",   type = "named" )  spacy_finalize()  print(ner_people)}`
-=======
 
 
 
@@ -948,4 +789,3 @@ Report:
 
 
 
->>>>>>> Stashed changes
