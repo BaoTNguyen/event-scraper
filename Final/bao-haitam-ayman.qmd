@@ -1,27 +1,25 @@
 ---
 title: "Event Scraper for In-Person Networking"
 author: "Bao Nguyen, Haitam Aksikas, Ayman Arman"
-format: html
-editor: visual
+format:
+  html:
+    embed-resources: true
 ---
-
-## 
 
 ```{r, include = FALSE}
 
 knitr::opts_chunk$set(echo = FALSE,
                   warning = FALSE,
-                  message = FALSE)
-
+                  message = FALSE,
+                  fig.width = 4,
+                  fig.height = 3,
+                  fig.align = "center",
+                  out.width = "75%")
 ```
 
 ```{r}
-library(dplyr) 
-library(tidyr) 
 library(purrr) 
-library(stringr) 
 library(tibble) 
-library(arrow) 
 library(tidyverse) 
 library(spacyr) 
 library(textdata) 
@@ -30,23 +28,37 @@ library(tidytext)
 library(igraph)
 library(ggraph)
 library(gt)
-library(stringr) 
-library(stringi) 
+library(stringi)
+library(ggplot2)
 ```
 
 # 1. Introduction
 
-Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. The typical student may send out numerous cold emails each week, with only a small fraction eventually translating into some form of dialogue. To skip the hassle, and develop meaningful relationships, young professionals are increasingly reliant on open invitation networking events to connect in-person and begin forming robust networks around them. Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. Unfortunately, the sheer volume of events can be somewhat daunting to analyze, leaving time constrained young professionals hearing about useful events only after they happen.
+## 1.1. The Current Job Market
 
-### 1.2. Our Solution
+Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. Young professionals are increasingly reliant on open invitation networking events to connect with individuals and begin forming a robust network around them Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. The volume of events can be somewhat daunting, leaving time constrained young professionals hearing about useful events only after they happen.
 
-We plan to limit the amount of time searching for events by scraping major websites containing event ads, and displaying the most relevant events to our end user.
+## 1.2. Our Solution
 
-Utilizing natural language processing techniques, we will score events based on relevance, sentiment, phrases used, and other key matches. If possible, we would also like to give our end user a leg up over the competition, and where possible, we will provide information on potential guests, corporate sponsors, and more. In summary, we want our end user to find the following after using this program:
+We plan to limit the amount of time searching for events by scraping major websites containing event ads, and displaying the most relevant events to our end user. Utilizing natural language processing techniques, we will score events based on relevance, sentiment, phrases used, and other key matches. Using this program, we aim to provide:
 
-1.  Top most relevant events given an overall relevance score.
-2.  Descriptive analysis of the key words and phrases that influenced the relevant score.
-3.  Names of people and companies that may potentially attend.
+-   The top three relevant events given an overall relevance score
+
+-   Names of people and companies to get in touch with
+
+-   Details to sign up for the above events
+
+## 1.3. Professional Personas
+
+We will have the following personas as examples to demonstrate how events are relevant to each individual:
+
+-   Tech persona: interested in networking as well as more technical workshops and hackathons
+
+-   Finance persona: interested in events related to networking, speaker series, and case competitions
+
+-   Entrepreneurship persona: interested in a wide variety of business, pitching and startup events
+
+These personas provide broad coverage for areas that many young professionals are looking to enter today, with finance and entrepreneurship having some overlap in interest.
 
 # 2. Data Sources
 
@@ -59,6 +71,42 @@ The following websites are used to find and extract events for further considera
 -   Edmonton Regional Innovation Network (ERIN): a coalition of organizations in the Edmonton region that support entrepreneurship and business activity
 
 Eventbrite contains a variety of available data, while Platform Calgary and ERIN represent specific locales and niches to compare against.
+
+# 3. Methodology
+
+## 3.1. Web Scraping
+
+To gather data, JavaScript files are written to scrape information from the events section of their respective websites. Each website's unique DOM is accessed to extract event titles, locations, dates and times as applicable. From there, individual pages under the events section are accessed to extract full event descriptions and links. Lastly, initial preprocessing is performed to extract the day of week.
+
+In the end, all upcoming events from ERIN and Platform Calgary are obtained, while all business events for the week ahead from Eventbrite are obtained. This process is flexible to run at any time period, and JSON outputs from each JavaScript file follow this data schema:
+
+-   Platform (platform): what website the event appeared in
+
+<!-- -->
+
+-   Title (title): the event's full title
+
+<!-- -->
+
+-   Link (event_url): link to view and register in the event
+
+<!-- -->
+
+-   Date (date): event date in mm/dd/yyyy format
+
+<!-- -->
+
+-   Day of week (day_of_week)
+
+<!-- -->
+
+-   Start time (start_time): when the event starts
+
+-   End time (end_time): when the event ends
+
+-   Location (location): where the event takes place
+
+-   Description (description): the full event description
 
 ```{r}
 edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>%
@@ -73,66 +121,35 @@ platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>%
 ```
 
 ```{r,include = FALSE}
-#eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
- # fromJSON() %>% 
-  #as_tibble()
+eventbrite <- system("node ./eventbrite.js", intern = TRUE) %>%
+  fromJSON() %>%
+  as_tibble()
 ```
 
-# 3. Methodology
+Combining all scraped data together into a full table and labeling each extracted event, we are ready to analyze further.
 
-### 3.1. Web Scraping
-
-To gather data, JavaScript files are written to scrape information from the events section of their respective websites. Each website's unique DOM is accessed to extract event titles, locations, dates and times as applicable. From there, individual pages under the events section are accessed to extract full event descriptions and links. Lastly, initial preprocessing is performed to extract the day of week.
-
-In the end, all upcoming events from ERIN and Platform Calgary are obtained, while all business events for the week ahead from Eventbrite are obtained. This process is flexible to run at any time period, and JSON outputs from each JavaScript file follow this data schema:
-
--   Platform (platform): what website the event appeared in
-
--   Title (title): the event's full title
-
--   Link (event_url): link to view and register in the event
-
--   Date (date): event date in mm/dd/yyyy format
-
--   Day of week (day_of_week)
-
--   Start time (start_time): when the event starts
-
--   End time (end_time): when the event ends
-
--   Location (location): where the event takes place
-
--   Description (description): the full event description
-
-An example output is shown below:
-
-```{r}
-all_events_raw <- bind_rows(edmontonrin, platformcalgary) %>% 
-  dplyr::mutate(event_id = row_number()) %>%
-  dplyr::select(event_id, dplyr::everything())
-
-
-all_events_raw[1,]%>%
-  gt::gt()
-```
-
-### 3.2. Named Entity Recognition
+## 3.2. Named Entity Recognition
 
 Named entity recognition is an important process in natural language processing to identify special tokens such as people, organizations, places, and topics. These specific entities represent potential connections, companies, and topics that are expected to appear, directly leading to informed decision-making for what events to attend. The spaCy package will be crucial for extracting such entities after preprocessing raw event descriptions to better parse extracted tokens.
 
 ```{r}
+all_events_raw <- bind_rows(edmontonrin, platformcalgary, eventbrite) %>% 
+  dplyr::mutate(event_id = row_number()) %>%
+  dplyr::select(event_id, dplyr::everything())
+
 # Preprocess description for spaCy
 all_events <- all_events_raw %>%
   mutate(
     description_clean = description %>%
-      str_replace_all("([a-z])(\\.[A-Z])", "\\1. \\2") %>%   # add space after a period glued to a capital
-      str_replace_all("([a-z])(,[A-Z])", "\\1, \\2") %>%     # add space after a comma glued to a capital
-      str_replace_all("([A-Za-z])'s", "\\1 's") %>%          # ensure space before possessive ’s
+      str_replace_all("([a-z])(\\.[A-Z])", "\\1. \\2") %>% # add space after a period glued to a capital
+      str_replace_all("([a-z])(,[A-Z])", "\\1, \\2") %>% # add space after a comma glued to a capital
+      str_replace_all("([A-Za-z])'s", "\\1 's") %>% # ensure space before possessive ’s
       str_replace_all("([A-Z]{2,})([A-Z][a-z])", "\\1 \\2") %>%  # split run-on capitals
       str_squish()
   )
-
 ```
+
+Note: potentially include an example raw vs preprocessed description here to illustrate differences
 
 We install and use the transformer model in spaCy to obtain the most accurate results possible. For people, organizations, and places, special entities are extracted and cleaned separately. For topics, applicable noun phrases that can potentially capture event relevance are extracted as various length n-grams.
 
@@ -142,34 +159,59 @@ spacy_install()
 spacy_download_langmodel("en_core_web_trf")
 ```
 
-Out of all possible types, spaCy represents our entities of interest (people, organizations, and places) as PERSON, ORG, and GPE. We develop a process to improve extraction quality by removing stop words and duplicate entities as well as restoring capitalization for organization acronyms and names to retain proper cases. Lastly, we indicate null for each event without some of these entities, which will be useful for later ranking event relevance in terms of details present.
-
-Similarly, we also clean noun phrases by removing stop words where necessary and recombining tokens based on event. Here, we remeasure each recombined entity's length to remove unigrams as they are not indicative of potential discussed topics.
-
 ```{r}
 # Initialize spaCy
 spacy_initialize(model = "en_core_web_trf")
 
 # NER extraction across all descriptions
 ner_df <- spacy_extract_entity(
-  all_events$description,
+  all_events$description_clean,
   output = "data.frame"
 ) %>% 
-  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
-  tibble::as_tibble() %>% # Preprocessing dataframe before further cleaning
+  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% # Preprocessing dataframe before further cleaning
+  tibble::as_tibble() %>% 
   filter(!str_detect(text, "@"), # Remove email addresses
          !str_detect(text, "https?://")) # Remove links
 
 # Noun phrase extraction across all descriptions
 np_df <- spacy_extract_nounphrases(
-  all_events$description,
+  all_events$description_clean,
   output = "data.frame"
 ) %>% 
-  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% 
+  mutate(doc_id = as.integer(str_remove(doc_id, "^text"))) %>% # Preprocessing dataframe before further cleaning
   tibble::as_tibble()
 
 spacy_finalize()
+```
 
+```{r}
+# Count unique entities by type
+ner_counts <- ner_df %>%
+  distinct(doc_id, text, ent_type) %>%   # Deduplicate entities
+  count(ent_type, sort = TRUE)
+
+# Entity frequency of extracted events
+ggplot(ner_counts, aes(x = reorder(ent_type, n), y = n)) +
+  geom_col(fill = "blue") +
+  geom_text(aes(label = scales::comma(n)), hjust = -0.1, color = "black") +
+  coord_flip() +
+  labs(
+    title = "Entity Types Found in Event Descriptions",
+    x = "Entity Type",
+    y = "Token Count"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+Note: make a potential bar chart for showing how many tokens of each entity type show up -\> reasoning for only retaining PERSON, ORG, GPE
+
+Out of all possible types, spaCy represents our entities of interest (people, organizations, and places) as PERSON, ORG, and GPE. We develop a process to improve extraction quality by removing stop words and duplicate entities as well as restoring capitalization for organization acronyms and names to retain proper cases. Lastly, we indicate null for each event without some of these entities, which will be useful for later ranking event relevance in terms of details present.
+
+```{r}
 # Keep useful entity types and regroup by category
 keep_types <- c("PERSON", "ORG", "GPE")
 entity_category_map <- tibble(
@@ -211,23 +253,27 @@ process_entities <- function(ner_df) {
     ) %>% 
     pivot_wider(names_from = category, values_from = entities) %>% 
     mutate(across(c(people, organizations, places),
-                  ~ map(.x, ~ if (length(.x) == 0) NA_character_ else .x)))
+                  ~ map(.x, ~ if (length(.x) == 0) NA else .x)))
 }
 
 # Call function
 entities_tbl <- process_entities(ner_df)
+```
 
+Similarly, we also clean noun phrases by removing stop words where necessary and recombining tokens based on event. Here, we remeasure each recombined entity's length to remove unigrams as they are not indicative of potential discussed topics.
+
+```{r}
 # Remove stop words from extracted noun phrases
 process_nounphrases <- function(np_df) {
   np_df %>% 
     unnest_tokens(output = word, input = text) %>% 
     anti_join(stop_words, by = "word") %>%
-    group_by(doc_id, root_id, start_id, length) %>%  # keys for a phrase
+    group_by(doc_id, root_id, start_id, length) %>%  # Keys for a phrase
     summarise(clean_text = str_c(word, collapse = " "),
               length = n(),
               .groups = "drop") %>%
     filter(clean_text != "") %>% 
-    filter(length > 1) %>%
+    filter(length > 1) %>% # Remove unigrams
     mutate(clean_text = str_squish(clean_text)) %>%
     group_by(doc_id) %>%
     summarise(noun_phrases = list(unique(clean_text)), .groups = "drop")
@@ -235,30 +281,94 @@ process_nounphrases <- function(np_df) {
 
 # Call function
 nounphrases_tbl <- process_nounphrases(np_df)
-
-# Attach enriched info to combined events for downstream personas / visualizations
-all_events_enriched <- all_events %>%
-  left_join(entities_tbl, join_by("event_id" == "doc_id")) %>%
-  left_join(nounphrases_tbl, join_by("event_id" == "doc_id"))
-
-
 ```
 
-Having extracted named entities and noun phrases, we can enrich our current events table with this additional information.
+Having extracted named entities and noun phrases, we can enrich our current events table with this additional information. The chart below shows how
+
+```{r}
+# Attach enriched info to combined events 
+all_events_enriched <- all_events %>%
+  left_join(entities_tbl, join_by("event_id" == "doc_id")) %>%
+  left_join(nounphrases_tbl, join_by("event_id" == "doc_id")) %>% 
+  mutate(
+    across(
+      where(is.list),
+      ~ map(.x, ~ if (is.null(.x)) NA else .x)
+    )
+  )
+```
+
+```{r}
+# Convert nulls and NAs to FALSE
+has_values <- function(x) {
+  if (is.null(x) || (length(x) == 1 && all(is.na(x)))) {
+    FALSE
+  } else {
+    length(x) > 0
+  }
+}
+
+# Get entity coverage for each event
+info_status_df <- all_events_enriched %>%
+  mutate(
+    has_people = map_lgl(people,        has_values),
+    has_orgs   = map_lgl(organizations, has_values),
+    has_places = map_lgl(places,        has_values),
+    info_status = case_when(
+      has_people & has_orgs & has_places             ~ "Full Information",
+      has_people & has_orgs & !has_places            ~ "Missing Locations",
+      has_people & !has_orgs & has_places            ~ "Missing Organizations",
+      !has_people & has_orgs & has_places            ~ "Missing People",
+      has_people & !has_orgs & !has_places           ~ "Only People",
+      !has_people & has_orgs & !has_places           ~ "Only Organizations",
+      !has_people & !has_orgs & has_places           ~ "Only Locations",
+      TRUE                                           ~ "Missing All"
+    ) %>%
+      factor(levels = c("Full Information",
+                        "Missing People",
+                        "Missing Organizations",
+                        "Missing Locations",
+                        "Only People",
+                        "Only Organizations",
+                        "Only Locations",
+                        "Missing All"))
+  )
+
+# Count entities of the same type
+status_counts <- info_status_df %>%
+  count(info_status, name = "events")
+
+# Graph entity coverage
+ggplot(status_counts, aes(x = info_status, y = events)) +
+  geom_col(fill = "blue") +
+  geom_text(aes(label = events), hjust = -0.3, color = "black", size = 3.5) +
+  labs(
+    title = "Entity Coverage Across Events",
+    x = NULL,
+    y = "Number of Events"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.x = element_text(size = 9),
+    panel.grid.major.x = element_blank()
+  ) +
+  coord_flip()
+```
 
 ## 3.3. Natural Language Processing (NLP)
 
 The importance of any given event is subjective to the wants and needs of our end user. When people actually read detailed descriptions they typically converge on a heuristic response, given a mixture of multiple different factors, to decide whether or not it is relevant. To mimic this, we must define personas, and create lexicons, to measurably compare events to our end users preferences.
 
-### Why and How to use NLP?
+### 3.3.1. Why and How to use NLP?
 
--   *Generating a precise understanding of the topic of the event.*
+-   Generating a precise understanding of the topic of the event.
 
--   *Differentiate topics among equally relevant events.*
+-   Differentiate topics among equally relevant events.
 
--   *Defining criteria by which we can choose relevant events.*
+-   Defining criteria by which we can choose relevant events.
 
--   *Visualizing distributions of event relevance, and rationalizing top 3 choices from it.*
+-   Visualizing distributions of event relevance, and rationalizing top 3 choices from it.
 
 We begin by tokenizing each word in all the event descriptions and plotting their overall use to extrapolate information about trending event topics.
 
@@ -333,29 +443,7 @@ rbind(
   labs(x = "Tokens", y = "Mentions")
 ```
 
-We note that there are multiple phrases that are potentially counted repeatedly within the same context. This means that two phrases are different by only one word, and because of that, each word is shown twice in our list of phrase tokens. This happens how?
-
-Suppose we are splitting a text into bi-grams (tokenizing each pair of words). The text is :
-
-"The principle is calling us!"
-
-We will get the following word pairs.
-
--   "The principle"
-
--   "principle is"
-
--   "is calling"
-
--   "calling us!"
-
-Analyzing these sorts of bi-grams can yield misleading results without refinement.
-
-We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult.
-
-Why this matters?:
-
-To side-step both these problems, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends. This will limit our n-gram analysis to only noun phrases.
+We note that there are multiple phrases that are potentially counted repeatedly within the same context. This means that two phrases are different by only one word, and because of that, each word is shown twice in our list of phrase tokens. To enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends. This will limit our n-gram analysis to only noun phrases.
 
 ```{r}
 
@@ -456,7 +544,8 @@ persona_finance_student <- list(
 
 
 data.frame(Keywords = paste(persona_finance_student$keywords, collapse = ", "), Priority_Keys = paste(persona_finance_student$priority_keywords, collapse = ", "), Locations = paste(persona_finance_student$locations, collapse = ", "))%>%
-  gt::gt()
+  gt::gt() %>% 
+  cols_label(Priority_Keys = "Priority Keywords")
 
 ```
 
@@ -501,7 +590,7 @@ persona_entrepreneur <- list(
 )
 ```
 
-### 3.1. Persona and Lexicon Matching
+### 3.3.2. Persona and Lexicon Matching
 
 To score events by relevance, we match keywords in pre-defined lexicons containing preferred language, with each event's description. Below is a visual example of the first step in our machine learning workflow.
 
@@ -545,44 +634,16 @@ At its core, we count matches between defined criteria and event descriptions. I
 
 ```{r}
 
-# Attempting same logic as matches first, **no use for lexicon dataframe
-#Initializing dataframe (this is not AI btw)
-
 nlp_type <- nlp_token_1
 nlp_type$Networking <- ""
-
-
 
 for(i in 1:nrow(nlp_type)){
 
 nlp_type$Networking[i] <- grepl(nlp_type[i,2], paste(networking_words, collapse = ""))
-
-
 }
 
 nlp_type <- nlp_type %>%
   dplyr::mutate(across(3:ncol(nlp_type), ~ as.integer(as.logical(.))))
-
-
-nlp_type %>%
-  tidyr::pivot_longer(cols = c(4:ncol(nlp_type)),
-                      names_to = "Type",
-                      values_to = "Score")%>%
-  dplyr::filter(Score != 0)%>%
-  ggplot2::ggplot(aes(x = reorder(as.character(event_id), Score), 
-                      y = Score,
-                      fill = Score))+
-  geom_col()+
-  labs(title = "Event Type Scores",
-       x = "Event ID")+
-  theme(panel.grid.minor.x = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "none",
-        panel.grid.major.y = element_line(colour = "lightgrey"))+
-  coord_flip()
-  
-
 
 # Not generalized so far
 nlp_type_scores <- nlp_type%>%
@@ -591,13 +652,11 @@ nlp_type_scores <- nlp_type%>%
                    Matches = sum(Contains))%>%
   dplyr::filter(Matches == 1)
 
-
-
 ```
 
 *Shown above is another example of key word matching, this time however, we are calculating a sentiment score based on the event's inclination towards the use of networking words.*
 
-### 3.2. N-gram Matching
+### 3.3.3. N-gram Matching
 
 Expanding from the uni-gram analysis, phrases can provide extra relevance, especially if repeated within or across events. Below are network graphs with information we will combine and use to assess relevance for each event.
 
@@ -758,7 +817,7 @@ np_pairs %>%
 
 *In a highly idiosyncratic event landscape, you can expect a default trendiness score of 1 across the board.*
 
-# 4. Machine Learning Workflow
+## 3.4. Machine Learning Workflow
 
 ```{r, include = FALSE}
 # attempt at making ML workflow chart
@@ -787,15 +846,25 @@ workflow_graph %>%
         legend.position = "none")
 ```
 
-We synthesize the data using a series of functions to output data for three alternative personas. The functions in our ML workflow are operable with raw data, lists, and lightly modified data frames as arguments. The workflow works as such:
+We developed a scalable, data-driven event recommendation model designed to evaluate and rank networking opportunities for personas with diverse interests and objectives. The approach integrates multiple structured features, including persona-specific keyword relevance, sentiment indicators, location and event-type alignment, and trend analysis. Each feature is weighted according to its relative importance within the scoring framework. Using this structure, the model assigns every event a standardized relevance score ranging from 1 to 10. This enables a clear analysis based comparison of opportunities and highlights the highest-value events for any given persona. The resulting recommendations provide a targeted and systematic method for connecting individuals with the most meaningful and engaging events in the dataset.
 
-1.  Criteria matching.
-2.  Building score tables.
-3.  Aggregating into original data frame.
-4.  Identifying top events.
-5.  Collecting Information.
+Our model follows a simple, yet effective workflow:
 
-We explore more in our results section.
+-   Keyword Alignment: We assess how strongly an event’s title and description reflect a personas interests by matching relevant domain-specific terms.
+
+-   Sentiment Analysis: Networking sentiment scores evaluate an event's description against a lexicon containing key words and other networking words, with both columns weighted differently.
+
+<!-- -->
+
+-   Location & Event-Type Relevance: Events recieve a higher score when their format, setting or location align more closely with persona preference.
+
+<!-- -->
+
+-   Trendiness Analysis: Instances of noun phrase pairings across event descriptions are factored by noun phrase counts per event to evaluate the level at which an event matches others in the space.
+
+-   NER: All special entities are used to identify how complete an event is **(finish soon)** , while noun phrases contribute to pairwise correlation calculations. Both of these factors enhance reliability of the trendiness score.
+
+-   Weighted Relevance Score: Each feature contributes proportionally to the final score, which serves as the models indicator of how strongly an event matches the given persona.
 
 ```{r}
 desc_tokens <- all_events %>%
@@ -920,7 +989,7 @@ match_type <- function(events, persona) {
 
 #__________________________________________________________________________________
 
-match_trendy <- function(np_clean){ #slightly fragile
+match_trendy <- function(np_clean){ 
 
 np_holder <- np_clean %>%
   dplyr::filter(Contains != "FALSE")
@@ -1027,13 +1096,13 @@ score_event_relevance <- function(events_features) {
   scored <- events_features %>%
     mutate(
       raw_score =
-        1.0 * Desc_Matches +
-        1.5 * Title_Matches +
-        1.5 * Sentiment_Key_Matches +
-        0.2 * Sentiment_Other_Matches +
-        1.0 * Location_Matches +
-        1.0 * Type_Matches +
-        Trendiness
+        0.3 * Desc_Matches +
+        0.15 * Title_Matches +
+        0.15 * Sentiment_Key_Matches +
+        0.05 * Sentiment_Other_Matches +
+        0.1 * Location_Matches +
+        0.15 * Type_Matches +
+        0.1 * Trendiness
     )
   
   min_val <- min(scored$raw_score, na.rm = TRUE)
@@ -1064,7 +1133,11 @@ get_top_events <- function(events_scored, n = 3) {
 }
 ```
 
-# 5. Results
+# 4. Results
+
+From our process to determine relevance score, we have the following results:
+
+-   Finance persona:
 
 ```{r}
 events_features_1 <- build_event_features(
@@ -1078,9 +1151,33 @@ events_features_1 <- build_event_features(
 
 events_scored_1 <- score_event_relevance(events_features_1)
 top3_events_1 <- get_top_events(events_scored_1, 3)
-top3_events_1
 
+top3_events_1 %>%
+  gt::gt()%>%
+  cols_align("center", columns = c(2:5,8))%>%
+  cols_width(title ~ px(400),
+             date ~ px(100),
+             start_time ~ px(400),
+             end_time ~ px(100),
+             location ~ px(200),
+             description ~ px(500),
+             event_url ~ px(400),
+             relevance_score ~ px(150))%>%   
+  cols_move_to_start(relevance_score)%>%   
+  cols_label(relevance_score = "Relevance Score",
+             title = "Title",
+             date = "Date",
+             start_time = "Start Time",
+             end_time = "End Time",
+             location = "Location",
+             description = "Description",
+             event_url = "URL")%>%   
+  tab_style(style = list(
+    cell_fill(color = "lightcyan")),
+    locations = cells_column_labels(columns = c(1:8)))
 ```
+
+-   Tech persona:
 
 ```{r}
 events_features_2 <- build_event_features(
@@ -1094,8 +1191,32 @@ events_features_2 <- build_event_features(
 
 events_scored_2 <- score_event_relevance(events_features_2)
 top3_events_2 <- get_top_events(events_scored_2, 3)
-top3_events_2
+top3_events_2 %>%
+  gt::gt()%>%
+  cols_align("center", columns = c(2:5,8))%>%
+  cols_width(title ~ px(400),
+             date ~ px(100),
+             start_time ~ px(400),
+             end_time ~ px(100),
+             location ~ px(200),
+             description ~ px(500),
+             event_url ~ px(400),
+             relevance_score ~ px(150))%>%   
+  cols_move_to_start(relevance_score)%>%   
+  cols_label(relevance_score = "Relevance Score",
+             title = "Title",
+             date = "Date",
+             start_time = "Start Time",
+             end_time = "End Time",
+             location = "Location",
+             description = "Description",
+             event_url = "URL")%>%   
+  tab_style(style = list(
+    cell_fill(color = "lightcyan")),
+    locations = cells_column_labels(columns = c(1:8)))
 ```
+
+-   Entrepreneurship persona:
 
 ```{r}
 events_features_3 <- build_event_features(
@@ -1109,7 +1230,31 @@ events_features_3 <- build_event_features(
 
 events_scored_3 <- score_event_relevance(events_features_3)
 top3_events_3 <- get_top_events(events_scored_3, 3)
-top3_events_3
+top3_events_3 %>%
+  gt::gt()%>%
+  cols_align("center", columns = c(2:5,8))%>%
+  cols_width(title ~ px(400),
+             date ~ px(100),
+             start_time ~ px(400),
+             end_time ~ px(100),
+             location ~ px(200),
+             description ~ px(500),
+             event_url ~ px(400),
+             relevance_score ~ px(150))%>%   
+  cols_move_to_start(relevance_score)%>%   
+  cols_label(relevance_score = "Relevance Score",
+             title = "Title",
+             date = "Date",
+             start_time = "Start Time",
+             end_time = "End Time",
+             location = "Location",
+             description = "Description",
+             event_url = "URL")%>%   
+  tab_style(style = list(
+    cell_fill(color = "lightcyan")),
+    locations = cells_column_labels(columns = c(1:8)))
 ```
 
-# 6. Conclusion
+# 5. Conclusion
+
+One key benefit of this project are the clear opportunities to extend and further develop the work. The core underlying framework can easily accommodate additional personas, new event platforms, or more advanced features. With a more in-depth analysis and user feedback, the model could evolve into a fully automated and continuously updated recommendation system. It can be deployed as a recurring recommendation tool for career centers, student clubs, or professional organizations, automatically being updated as new events are posted. Overall, this proof of concept illustrates how combining web scraping with NLP-based feature engineering can signifcantly reduce search costs and has the potential to enhance how individuals discover and prioritize high-value networking opportunities, which ultimately enables a more sophisticated and impactful career development.
