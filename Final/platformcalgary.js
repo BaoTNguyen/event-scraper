@@ -40,6 +40,15 @@ const cheerio = require("cheerio");
     Dec: "12",
     December: "12",
   };
+  const dayOfWeekMap = {
+    Mon: "Monday",
+    Tue: "Tuesday",
+    Wed: "Wednesday",
+    Thu: "Thursday",
+    Fri: "Friday",
+    Sat: "Saturday",
+    Sun: "Sunday",
+  };
 
   const cardEvents = $('section#community [fs-cmsfilter-element="list"] .w-dyn-item');
   const currentYear = new Date().getFullYear();
@@ -114,7 +123,7 @@ const cheerio = require("cheerio");
       title,
       event_url: href,
       date,
-      day_of_week: dow || null,
+      day_of_week: dow ? dayOfWeekMap[dow] || dow : null,
       start_time: startTime,
       end_time: endTime,
       location,
