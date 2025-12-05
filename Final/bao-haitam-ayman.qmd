@@ -311,7 +311,11 @@ We will get the following word pairs.
 
 Analyzing these sorts of bi-grams can yield misleading results without refinement.
 
-We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult. To side-step both these problems, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends.
+We also face a problem of non-descriptive phrases containing filler words not already stopped out. Differentiating contexts for n-grams \>1 can prove quite difficult.
+
+Why this matters?:
+
+To side-step both these problems, and enhance our analysis, we can rely on our enriched data frame to pull noun-phrases to evaluate trends. This will limit our n-gram analysis to only noun phrases.
 
 ```{r}
 
@@ -378,7 +382,7 @@ np_igraph %>%
 
 Given the above graphic, you can extract multiple key takeaways about the event landscape you are a part of. High levels of fragmentation would signify an overall lack of synchronicity among events. A more interconnected cobweb of key phrases and events would support the belief that there is a dominant trend.
 
-We can observe some clustering of events allowing us to establish some inter-connectivity if any. We can further refine our uni-gram and bi-gram matching to include only events with relevant words. We utilize lexicons such as the one below as a comparative list.
+We can observe some clustering of events allowing us to establish some inter-connectivity if any. We can further refine our uni-gram and noun phrase matching to include only events with relevant words. We utilize lexicons such as the one below as a comparative list.
 
 ```{r}
 networking_words <- list(
@@ -410,7 +414,10 @@ persona_finance_student <- list(
   event_types = c("networking", "career fair", "seminar")
 )
 
-persona_finance_student
+
+data.frame(Keywords = paste(persona_finance_student$keywords, collapse = ", "), Priority_Keys = paste(persona_finance_student$priority_keywords, collapse = ", "), Locations = paste(persona_finance_student$locations, collapse = ", "))%>%
+  gt::gt()
+
 ```
 
 ```{r}
@@ -486,7 +493,8 @@ nlp_fit %>%
   theme(panel.background = element_blank(),
         panel.grid = element_line(colour = "lightgrey"),
         legend.position = "none")+
-  labs(x = "Matches", y = "Event ID")
+  labs(x = "Matches", y = "Event ID",
+       title = "Number of Persona Matches by Event")
 
 
 
@@ -495,9 +503,9 @@ nlp_fit %>%
 
 At its core, we count matches between defined criteria and event descriptions. In the above example, taking count as score, the top ranking event will thus be recommended to our end user. This is a simplified example.
 
-### Bi-gram Matching
+### N-gram Matching
 
-Expanding from the uni-gram analysis, phrases can provide extra relevance, especially if repeated.
+Expanding from the uni-gram analysis, phrases can provide extra relevance, especially if repeated within or across events. Below are network graphs with information we will combine and use to assess relevance for each event.
 
 ```{r}
 
@@ -556,10 +564,11 @@ np_holder <- np_clean %>%
   dplyr::filter(Contains != "FALSE")
 
 
+```
 
+```{r}
 
-
-np_clean %>%
+np_pairwise <- np_clean %>%
   dplyr::filter(doc_id %in% np_holder$doc_id)%>%
   dplyr::select(doc_id, clean_text)%>%
   widyr::pairwise_cor(
@@ -567,7 +576,10 @@ np_clean %>%
     feature = doc_id,
     sort = T,
     upper = FALSE)%>%
-  dplyr::filter(correlation > .7)%>% 
+  dplyr::filter(correlation > 0)
+
+
+np_pairwise%>%
   igraph::graph_from_data_frame() %>%
   ggraph(layout = "grid") +
   geom_edge_link(show.legend = FALSE) +
@@ -579,7 +591,78 @@ np_clean %>%
   theme_void()+
   labs(title = "Correlated Phrases in Relevant Events")
 
+
+
 ```
+
+The First - "Phrases in Relevant Events" - is a network graph tying event_id with all known noun phrases that include relevant information. This will not directly be used to calculate relevant score because keyword matching is already incorporated through uni-gram matching.
+
+Each individual edge node does not reflect significance by virtue of existing. An exception is phrase nodes connecting to 1 or more event. If a noun-phrase containing a key word is mentioned in more than one event, we consider it a "Trendy" word. This can aid our analysis if we can isolate a trendiness score per event.
+
+The Second - "Correlated Phrases in Relevant Events" - is a pairwise correlation between noun-phrases, not grouped by event. While this provides useful information on what words are used together, and which are not on a large scale, we use it to calculate trendiness.
+
+In simple terms, our pairwise output links all different phrases used together across event descriptions. We use this to analyze the number of pairings each event has generated via its noun phrases.
+
+[Defining Trendiness:]{.underline}
+
+Given a count for noun phrases per event, and pair links generated per event, we calculate trendiness as:
+
+(# of Pairs) / ^(#\ of\ noun\ phrases)^C~2~
+
+We calculate trendiness as such because pairwise analysis provides pairings for noun phrases within the same event, potentially leading to incorrect interpretations.
+
+If the numerator (# of Pairs) is larger than the possible combinations of noun phrase pairs per event, we can conclude that one or more noun phrases in that event is paired with a different noun phrase else where.
+
+An output of scoring generated is found below:
+
+```{r}
+
+# Trendiness Score
+
+np_clean_ids <- np_clean %>%
+  dplyr::filter(doc_id %in% np_holder$doc_id)
+
+# ^ Grabs all noun phrases for relevant events
+
+noun_count <- np_clean_ids%>%
+  dplyr::group_by(doc_id)%>%
+  count(doc_id,
+        name = "count_nouns")
+
+np_pairs <- np_pairwise %>% count(item1, name = "Pairs")
+
+
+np_pairs <- np_pairs %>%
+  left_join(np_clean_ids %>% select(clean_text, doc_id),
+          by = c("item1" = "clean_text"))
+
+
+
+np_pairs$doc_id <- as.integer(np_pairs$doc_id)
+
+np_pairs %>%
+  dplyr::select(-item1)%>%
+  dplyr::group_by(doc_id)%>%
+  dplyr::summarise(Pairs = sum(Pairs))%>%
+  dplyr::left_join(noun_count)%>%
+  dplyr::mutate(Trendiness = Pairs/
+                  pmax(choose(count_nouns, 2), 1))%>%
+  drop_na()%>%
+  ggplot2::ggplot(aes(x = reorder(as.character(doc_id), Trendiness),
+                      y = Trendiness,
+                      fill = as.character(doc_id)))+
+  geom_col()+
+  labs(title = "Trendiness Meter Per Event",
+       x = "Event IDs")+
+  theme(panel.background = element_blank(),
+        legend.position = "none")
+
+
+
+
+```
+
+*In a highly idiosyncratic event landscape, you can expect a default trendiness score of 1 across the board*
 
 ```{r}
 
@@ -627,39 +710,6 @@ nlp_type_scores <- nlp_type%>%
   dplyr::summarise(Network_Score = sum(Networking),
                    Matches = sum(Contains))%>%
   dplyr::filter(Matches == 1)
-
-```
-
--   extract in multiple ways
-
--   if u extract and match to unigrams, those should indicate the terms that are used often. you can get a measure of relevance from unigram matches directly. (what we did)
-
--   with phrases, usually its very deliberate, could show extra relevance.
-
-```{r}
-
-
-event_words <- nlp_type %>% dplyr::filter(Contains != 0)%>%
-  dplyr::select(event_id)%>% left_join(., nlp_token_1, by = "event_id")%>%dplyr::group_by(event_id)%>%
-  dplyr::count(word, name = "Instances")%>%
-  dplyr::arrange(desc(Instances))
-
-
-
-event_igraph <- event_words%>%  dplyr::group_by(word)%>%
-  igraph::graph_from_data_frame()
-
-
-event_igraph%>%
-  ggraph(layout = "nicely")+
-  geom_edge_link(show.legend = FALSE)+
-  geom_node_point(colour = "orange", size = 5)+
-  geom_node_text(aes(label = name),
-                 size = 4,
-                 vjust = 1.3,
-                 hjust = 0.9)+
-  theme_void()
-
 
 ```
 
@@ -788,25 +838,66 @@ match_type <- function(events, persona) {
 
 #__________________________________________________________________________________
 
+match_trendy <- function(np_clean){ #slightly fragile
+
+np_holder <- np_clean %>%
+  dplyr::filter(Contains != "FALSE")
+  
+  
+np_pairwise <- np_clean %>%
+  dplyr::filter(doc_id %in% np_holder$doc_id)%>%
+  dplyr::select(doc_id, clean_text)%>%
+  widyr::pairwise_cor(
+    item = clean_text,
+    feature = doc_id,
+    sort = T,
+    upper = FALSE)%>%
+  dplyr::filter(correlation > 0)
+
+# Complete repeat of the visualization above ^^^
+np_clean_ids <- np_clean %>%
+  dplyr::filter(doc_id %in% np_holder$doc_id)
+
+# ^ Grabs all noun phrases for relevant events
+
+noun_count <- np_clean_ids%>%
+  dplyr::group_by(doc_id)%>%
+  count(doc_id,
+        name = "count_nouns")
+
+np_pairs <- np_pairwise %>% count(item1, name = "Pairs")
+
+
+np_pairs <- np_pairs %>%
+  left_join(np_clean_ids %>% select(clean_text, doc_id),
+          by = c("item1" = "clean_text"))
+
+
+
+np_pairs$doc_id <- as.integer(np_pairs$doc_id)
+
+np_pairs %>%
+  dplyr::select(-item1)%>%
+  dplyr::group_by(doc_id)%>%
+  dplyr::summarise(Pairs = sum(Pairs))%>%
+  dplyr::left_join(noun_count)%>%
+  dplyr::mutate(Trendiness = Pairs/
+                  pmax(choose(count_nouns, 2), 1))%>%
+  drop_na()%>%
+  dplyr::transmute(event_id = doc_id, Trendiness)
+
+
+}
+#__________________________________________________________________________________
+
+
+
+
+
+
+
 match_highly_relevant <- function(){
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+ 
 }
 
 
@@ -818,7 +909,7 @@ match_highly_relevant <- function(){
 
 ```{r}
 build_event_features <- function(all_events, desc_tokens, title_tokens, 
-                                 persona, networking_words) {
+                                 persona, networking_words, np_clean) {
   
   desc_hits_tbl     <- match_desc(desc_tokens, persona)
   title_hits_tbl    <- match_title(title_tokens, persona)
@@ -826,21 +917,24 @@ build_event_features <- function(all_events, desc_tokens, title_tokens,
   sentiment_other_tbl <- event_sentiment_other(desc_tokens, networking_words)
   loc_match_tbl     <- match_location(all_events, persona)
   type_match_tbl    <- match_type(all_events, persona)
+  trendy_tbl        <- match_trendy(np_clean)
   
   all_events %>%
-    left_join(desc_hits_tbl,     by = "event_id") %>%
+    left_join(desc_hits_tbl,  by = "event_id") %>%
     left_join(title_hits_tbl, by = "event_id") %>%
-    left_join(sentiment_key_tbl,    by = "event_id") %>%
-    left_join(sentiment_other_tbl,     by = "event_id") %>%
-    left_join(loc_match_tbl,     by = "event_id") %>%
-    left_join(type_match_tbl,    by = "event_id") %>%
+    left_join(sentiment_key_tbl, by = "event_id") %>%
+    left_join(sentiment_other_tbl, by = "event_id") %>%
+    left_join(loc_match_tbl,  by = "event_id") %>%
+    left_join(type_match_tbl, by = "event_id") %>%
+    left_join(trendy_tbl,     by = "event_id")%>%
     mutate(
       Desc_Matches          = replace_na(Desc_Matches, 0),
       Title_Matches         = replace_na(Title_Matches, 0),
       Sentiment_Key_Matches       = replace_na(Sentiment_Key_Matches, 0),
       Sentiment_Other_Matches       = replace_na(Sentiment_Other_Matches, 0),
       Location_Matches      = replace_na(Location_Matches, 0),
-      Type_Matches          = replace_na(Type_Matches, 0)
+      Type_Matches          = replace_na(Type_Matches, 0),
+      Trendiness            = replace_na(Trendiness, 0)
     )
 }
 ```
@@ -856,7 +950,8 @@ score_event_relevance <- function(events_features) {
         1.5 * Sentiment_Key_Matches +
         0.2 * Sentiment_Other_Matches +
         1.0 * Location_Matches +
-        1.0 * Type_Matches
+        1.0 * Type_Matches +
+        Trendiness
     )
   
   min_val <- min(scored$raw_score, na.rm = TRUE)
@@ -893,7 +988,8 @@ events_features_1 <- build_event_features(
   desc_tokens,
   title_tokens,
   persona_finance_student,
-  networking_words
+  networking_words,
+  np_clean
 )
 
 events_scored_1 <- score_event_relevance(events_features_1)
@@ -908,7 +1004,8 @@ events_features_2 <- build_event_features(
   desc_tokens,
   title_tokens,
   persona_tech_student,
-  networking_words
+  networking_words,
+  np_clean
 )
 
 events_scored_2 <- score_event_relevance(events_features_2)
@@ -922,7 +1019,8 @@ events_features_3 <- build_event_features(
   desc_tokens,
   title_tokens,
   persona_entrepreneur,
-  networking_words
+  networking_words,
+  np_clean
 )
 
 events_scored_3 <- score_event_relevance(events_features_3)
