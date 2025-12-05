@@ -51,7 +51,7 @@ async function scrapeAllListingPages(page, startingUrl) {
 
   while (currentPageUrl) {
     await page.goto(currentPageUrl, {
-      waitUntil: 'domcontentloaded',    // less likely to hang than "networkidle"
+      waitUntil: 'domcontentloaded',    
       timeout: 45000
     });
     await autoScroll(page);
@@ -88,7 +88,7 @@ async function scrapeAllListingPages(page, startingUrl) {
 async function scrapeEventPage(page, url) {
   try {
     await page.goto(url, {
-      waitUntil: 'domcontentloaded',  // again, less likely to hang
+      waitUntil: 'domcontentloaded',  
       timeout: 45000
     });
     await page.waitForTimeout(2000);
