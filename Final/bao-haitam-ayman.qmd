@@ -34,25 +34,31 @@ library(stringr)
 library(stringi) 
 ```
 
-# Introduction
+# 1. Introduction
 
 Job seekers are focusing more on securing internships or new graduate roles through strong connections and sponsors within their field. The typical student may send out numerous cold emails each week, with only a small fraction eventually translating into some form of dialogue. To skip the hassle, and develop meaningful relationships, young professionals are increasingly reliant on open invitation networking events to connect in-person and begin forming robust networks around them. Event organizers typically market such events across a multitude of websites, each usually focusing on specific geographical areas, or overall topic groups. Unfortunately, the sheer volume of events can be somewhat daunting to analyze, leaving time constrained young professionals hearing about useful events only after they happen.
 
-### [Our Solution]{.underline}
+### 1.2. Our Solution
 
-We plan to limit the amount of time searching for events by scraping major websites containing event ads, and displaying the most relevant events to our end user. The websites used in the development process are:
-
--   Eventbrite
-
--   Platform Calgary
-
--   Edmonton RIN
+We plan to limit the amount of time searching for events by scraping major websites containing event ads, and displaying the most relevant events to our end user.
 
 Utilizing natural language processing techniques, we will score events based on relevance, sentiment, phrases used, and other key matches. If possible, we would also like to give our end user a leg up over the competition, and where possible, we will provide information on potential guests, corporate sponsors, and more. In summary, we want our end user to find the following after using this program:
 
 1.  Top most relevant events given an overall relevance score.
 2.  Descriptive analysis of the key words and phrases that influenced the relevant score.
 3.  Names of people and companies that may potentially attend.
+
+# 2. Data Sources
+
+The following websites are used to find and extract events for further consideration:
+
+-   Eventbrite: a popular website for companies and organizations to host live events in many niches
+
+-   Platform Calgary: a Calgary-based technology organization that hosts many local tech and business events
+
+-   Edmonton Regional Innovation Network (ERIN): a coalition of organizations in the Edmonton region that support entrepreneurship and business activity
+
+Eventbrite contains a variety of available data, while Platform Calgary and ERIN represent specific locales and niches to compare against.
 
 ```{r}
 edmontonrin <- system("node ./edmontonrin.js", intern = TRUE) %>%
@@ -72,9 +78,33 @@ platformcalgary <- system("node ./platformcalgary.js", intern = TRUE) %>%
   #as_tibble()
 ```
 
-# Methodology
+# 3. Methodology
 
-The data is wrangled using a javascript web scraper. Key features are extracted such as Title, Description, and more. An example output is provided here:
+### 3.1. Web Scraping
+
+To gather data, JavaScript files are written to scrape information from the events section of their respective websites. Each website's unique DOM is accessed to extract event titles, locations, dates and times as applicable. From there, individual pages under the events section are accessed to extract full event descriptions and links. Lastly, initial preprocessing is performed to extract the day of week.
+
+In the end, all upcoming events from ERIN and Platform Calgary are obtained, while all business events for the week ahead from Eventbrite are obtained. This process is flexible to run at any time period, and JSON outputs from each JavaScript file follow this data schema:
+
+-   Platform (platform): what website the event appeared in
+
+-   Title (title): the event's full title
+
+-   Link (event_url): link to view and register in the event
+
+-   Date (date): event date in mm/dd/yyyy format
+
+-   Day of week (day_of_week)
+
+-   Start time (start_time): when the event starts
+
+-   End time (end_time): when the event ends
+
+-   Location (location): where the event takes place
+
+-   Description (description): the full event description
+
+An example output is shown below:
 
 ```{r}
 all_events_raw <- bind_rows(edmontonrin, platformcalgary) %>% 
@@ -86,7 +116,9 @@ all_events_raw[1,]%>%
   gt::gt()
 ```
 
-\*\* NER EXPLANATION HERE EXPLAINING THE UPDATED FEATURE LIST \*\*
+### 3.2. Named Entity Recognition
+
+Named entity recognition is an important process in natural language processing to identify special tokens such as people, organizations, places, and topics. These specific entities represent potential connections, companies, and topics that are expected to appear, directly leading to informed decision-making for what events to attend. The spaCy package will be crucial for extracting such entities after preprocessing raw event descriptions to better parse extracted tokens.
 
 ```{r}
 # Preprocess description for spaCy
@@ -102,11 +134,17 @@ all_events <- all_events_raw %>%
 
 ```
 
+We install and use the transformer model in spaCy to obtain the most accurate results possible. For people, organizations, and places, special entities are extracted and cleaned separately. For topics, applicable noun phrases that can potentially capture event relevance are extracted as various length n-grams.
+
 ```{r}
 # Install and prepare spaCy transformer model
 spacy_install()
 spacy_download_langmodel("en_core_web_trf")
 ```
+
+Out of all possible types, spaCy represents our entities of interest (people, organizations, and places) as PERSON, ORG, and GPE. We develop a process to improve extraction quality by removing stop words and duplicate entities as well as restoring capitalization for organization acronyms and names to retain proper cases. Lastly, we indicate null for each event without some of these entities, which will be useful for later ranking event relevance in terms of details present.
+
+Similarly, we also clean noun phrases by removing stop words where necessary and recombining tokens based on event. Here, we remeasure each recombined entity's length to remove unigrams as they are not indicative of potential discussed topics.
 
 ```{r}
 # Initialize spaCy
@@ -206,7 +244,9 @@ all_events_enriched <- all_events %>%
 
 ```
 
-## Natural Language Processing (NLP)
+Having extracted named entities and noun phrases, we can enrich our current events table with this additional information.
+
+## 3.3. Natural Language Processing (NLP)
 
 The importance of any given event is subjective to the wants and needs of our end user. When people actually read detailed descriptions they typically converge on a heuristic response, given a mixture of multiple different factors, to decide whether or not it is relevant. To mimic this, we must define personas, and create lexicons, to measurably compare events to our end users preferences.
 
@@ -214,11 +254,11 @@ The importance of any given event is subjective to the wants and needs of our en
 
 -   *Generating a precise understanding of the topic of the event.*
 
--   Differentiate topics among equally relevant events.
+-   *Differentiate topics among equally relevant events.*
 
 -   *Defining criteria by which we can choose relevant events.*
 
--   Visualizing distributions of event relevance, and rationalizing top 3 choices from it.
+-   *Visualizing distributions of event relevance, and rationalizing top 3 choices from it.*
 
 We begin by tokenizing each word in all the event descriptions and plotting their overall use to extrapolate information about trending event topics.
 
@@ -461,7 +501,7 @@ persona_entrepreneur <- list(
 )
 ```
 
-### Persona and Lexicon Matching
+### 3.1. Persona and Lexicon Matching
 
 To score events by relevance, we match keywords in pre-defined lexicons containing preferred language, with each event's description. Below is a visual example of the first step in our machine learning workflow.
 
@@ -503,7 +543,61 @@ nlp_fit %>%
 
 At its core, we count matches between defined criteria and event descriptions. In the above example, taking count as score, the top ranking event will thus be recommended to our end user. This is a simplified example.
 
-### N-gram Matching
+```{r}
+
+# Attempting same logic as matches first, **no use for lexicon dataframe
+#Initializing dataframe (this is not AI btw)
+
+nlp_type <- nlp_token_1
+nlp_type$Networking <- ""
+
+
+
+for(i in 1:nrow(nlp_type)){
+
+nlp_type$Networking[i] <- grepl(nlp_type[i,2], paste(networking_words, collapse = ""))
+
+
+}
+
+nlp_type <- nlp_type %>%
+  dplyr::mutate(across(3:ncol(nlp_type), ~ as.integer(as.logical(.))))
+
+
+nlp_type %>%
+  tidyr::pivot_longer(cols = c(4:ncol(nlp_type)),
+                      names_to = "Type",
+                      values_to = "Score")%>%
+  dplyr::filter(Score != 0)%>%
+  ggplot2::ggplot(aes(x = reorder(as.character(event_id), Score), 
+                      y = Score,
+                      fill = Score))+
+  geom_col()+
+  labs(title = "Event Type Scores",
+       x = "Event ID")+
+  theme(panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.background = element_blank(),
+        legend.position = "none",
+        panel.grid.major.y = element_line(colour = "lightgrey"))+
+  coord_flip()
+  
+
+
+# Not generalized so far
+nlp_type_scores <- nlp_type%>%
+  dplyr::group_by(event_id)%>%
+  dplyr::summarise(Network_Score = sum(Networking),
+                   Matches = sum(Contains))%>%
+  dplyr::filter(Matches == 1)
+
+
+
+```
+
+*Shown above is another example of key word matching, this time however, we are calculating a sentiment score based on the event's inclination towards the use of networking words.*
+
+### 3.2. N-gram Matching
 
 Expanding from the uni-gram analysis, phrases can provide extra relevance, especially if repeated within or across events. Below are network graphs with information we will combine and use to assess relevance for each event.
 
@@ -607,13 +701,13 @@ In simple terms, our pairwise output links all different phrases used together a
 
 Given a count for noun phrases per event, and pair links generated per event, we calculate trendiness as:
 
-(# of Pairs) / ^(#\ of\ noun\ phrases)^C~2~
+(# of Pairs) / ^(# of noun phrases)^C~2~
 
 We calculate trendiness as such because pairwise analysis provides pairings for noun phrases within the same event, potentially leading to incorrect interpretations.
 
 If the numerator (# of Pairs) is larger than the possible combinations of noun phrase pairs per event, we can conclude that one or more noun phrases in that event is paired with a different noun phrase else where.
 
-An output of scoring generated is found below:
+An output of the scoring is found below:
 
 ```{r}
 
@@ -662,58 +756,46 @@ np_pairs %>%
 
 ```
 
-*In a highly idiosyncratic event landscape, you can expect a default trendiness score of 1 across the board*
+*In a highly idiosyncratic event landscape, you can expect a default trendiness score of 1 across the board.*
 
-```{r}
+# 4. Machine Learning Workflow
 
-# Attempting same logic as matches first, **no use for lexicon dataframe
-#Initializing dataframe (this is not AI btw)
+```{r, include = FALSE}
+# attempt at making ML workflow chart
 
-nlp_type <- nlp_token_1
-nlp_type$Networking <- ""
+workflow_graph <- data.frame(Workflow = c("Criteria Matching",
+                                       "Building Score Tables",
+                                       "Calculating Relevant Score",
+                                       "Identifying Top Events",
+                                       "Collecting Information"),
+                       Order = c(1:5),
+                       y_ax = c(2,2,2,2,2))
 
-
-
-for(i in 1:nrow(nlp_type)){
-
-nlp_type$Networking[i] <- grepl(nlp_type[i,2], paste(networking_words, collapse = ""))
-
-
-}
-
-nlp_type <- nlp_type %>%
-  dplyr::mutate(across(3:ncol(nlp_type), ~ as.integer(as.logical(.))))
-
-
-nlp_type %>%
-  tidyr::pivot_longer(cols = c(4:ncol(nlp_type)),
-                      names_to = "Type",
-                      values_to = "Score")%>%
-  dplyr::filter(Score != 0)%>%
-  ggplot2::ggplot(aes(x = as.character(event_id), 
-                      y = Score,
-                      fill = Score))+
-  geom_col()+
-  theme(panel.grid.minor.x = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.background = element_rect(fill = "lightgrey"),
-        legend.position = "none")+
-  labs(title = "Event Type Scores",
-       )+
-  coord_flip()
-  
-
-
-# Not generalized so far
-nlp_type_scores <- nlp_type%>%
-  dplyr::group_by(event_id)%>%
-  dplyr::summarise(Network_Score = sum(Networking),
-                   Matches = sum(Contains))%>%
-  dplyr::filter(Matches == 1)
-
+workflow_graph %>%
+  ggplot2::ggplot(aes(x = Order, 
+                      y = y_ax, fill = Workflow,
+                      label = Workflow))+
+  geom_point(size = 3,
+             colour = "black")+
+  theme(panel.background = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        legend.position = "none")
 ```
 
-### Machine Learning Workflow
+We synthesize the data using a series of functions to output data for three alternative personas. The functions in our ML workflow are operable with raw data, lists, and lightly modified data frames as arguments. The workflow works as such:
+
+1.  Criteria matching.
+2.  Building score tables.
+3.  Aggregating into original data frame.
+4.  Identifying top events.
+5.  Collecting Information.
+
+We explore more in our results section.
 
 ```{r}
 desc_tokens <- all_events %>%
@@ -982,6 +1064,8 @@ get_top_events <- function(events_scored, n = 3) {
 }
 ```
 
+# 5. Results
+
 ```{r}
 events_features_1 <- build_event_features(
   all_events,
@@ -1028,11 +1112,4 @@ top3_events_3 <- get_top_events(events_scored_3, 3)
 top3_events_3
 ```
 
-What Next:
-
-Rough Structure of Report. Section where each visualization will belong.
-
-Report:
-
--   Intro: Framing the Problem/hypothesis
-    -   Problems with the job search, and proposal
+# 6. Conclusion
